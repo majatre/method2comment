@@ -23,8 +23,8 @@ import numpy as np
 from docopt import docopt
 from dpu_utils.utils import run_and_debug
 
-from dataset import build_vocab_from_data_dir, load_data_from_dir, get_minibatch_iterator
-from model_tf2 import LanguageModelTF2 as LanguageModel
+from data_processing.dataset import build_vocab_from_data_dir, load_data_from_dir, get_minibatch_iterator
+from models.model_main import LanguageModel
 
 def train(
     model: LanguageModel,

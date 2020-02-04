@@ -17,7 +17,7 @@ class LanguageModelLoss(NamedTuple):
     num_correct_token_predictions: tf.Tensor
 
 
-class LanguageModelTF2(tf.keras.Model):
+class LanguageModel(tf.keras.Model):
     @classmethod
     def get_default_hyperparameters(cls) -> Dict[str, Any]:
         return {

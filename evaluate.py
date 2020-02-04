@@ -11,8 +11,8 @@ Options:
 from docopt import docopt
 from dpu_utils.utils import run_and_debug
 
-from dataset import load_data_from_dir, get_minibatch_iterator
-from model import LanguageModel
+from data_processing.dataset import load_data_from_dir, get_minibatch_iterator
+from models.model_main import LanguageModel
 
 
 def run(arguments) -> None:

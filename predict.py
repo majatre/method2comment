@@ -15,8 +15,8 @@ from typing import List
 from docopt import docopt
 from dpu_utils.utils import run_and_debug
 
-from dataset import tensorise_token_sequence, END_SYMBOL
-from model import LanguageModel
+from data_processing.dataset import tensorise_token_sequence, END_SYMBOL
+from models.model_main import LanguageModel
 
 
 def run(arguments) -> None:
