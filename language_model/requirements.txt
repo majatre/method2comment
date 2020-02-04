@@ -1,0 +1,4 @@
+dpu-utils
+numpy
+more_itertools
+docopt
