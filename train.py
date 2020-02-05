@@ -23,7 +23,7 @@ import numpy as np
 from docopt import docopt
 from dpu_utils.utils import run_and_debug
 
-from data_processing.dataset import build_vocab, tensorise_data, get_minibatch_iterator
+from data_processing.dataset import build_vocab, tensorise_data, prepare_data, get_minibatch_iterator
 from models.model_main import LanguageModel
 
 import pickle
@@ -99,31 +99,38 @@ def run(arguments) -> None:
 
     print("Loading data ...")
     data = pickle.load(open('./data/' + args["TRAIN_DATA_DIR"] + '.pkl', 'rb'))
-    vocab_comments = build_vocab(
+    vocab_source = build_vocab(
+        data = data,
+        source_or_target = "source",
+        vocab_size=hyperparameters["max_vocab_size"],
+        max_num_files=max_num_files,
+    )
+    vocab_target = build_vocab(
         data = data,
         source_or_target = "target",
         vocab_size=hyperparameters["max_vocab_size"],
         max_num_files=max_num_files,
     )
-    print(f"  Built vocabulary of {len(vocab_comments)} entries.")
-    train_data = tensorise_data(
-        vocab_comments,
-        length=hyperparameters["max_seq_length"],
+    print(f"  Built source vocabulary of {len(vocab_source)} entries.")
+    print(f"  Built comment vocabulary of {len(vocab_target)} entries.")
+    train_data = prepare_data(
+        vocab_source, vocab_target,
         data=data,
-        source_or_target = "target",
+        max_source_len=hyperparameters["max_seq_length"],
+        max_target_len=hyperparameters["max_seq_length"],
         max_num_files=max_num_files,
     )
     print(f"  Loaded {train_data.shape[0]} training samples from {args['TRAIN_DATA_DIR']}.")
     valid_data = pickle.load(open('./data/' + args["VALID_DATA_DIR"] + '.pkl', 'rb'))
-    valid_data = tensorise_data(
-        vocab_comments,
-        length=hyperparameters["max_seq_length"],
-        data=data,
-        source_or_target = "target",
+    valid_data = prepare_data(
+        vocab_source, vocab_target,
+        data=valid_data,
+        max_source_len=hyperparameters["max_seq_length"],
+        max_target_len=hyperparameters["max_seq_length"],
         max_num_files=max_num_files,
     )
     print(f"  Loaded {valid_data.shape[0]} validation samples from {args['VALID_DATA_DIR']}.")
-    model = LanguageModel(hyperparameters, vocab_comments)
+    model = LanguageModel(hyperparameters, vocab_source, vocab_target)
     model.build(([None, hyperparameters["max_seq_length"]]))
     print(
         f"Constructed model, using the following hyperparameters: {json.dumps(hyperparameters)}"

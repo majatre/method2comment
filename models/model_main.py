@@ -6,6 +6,9 @@ import numpy as np
 import tensorflow.compat.v2 as tf
 from dpu_utils.mlutils.vocabulary import Vocabulary
 
+from models import GRU_encoder
+from models import GRU_decoder
+
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 tf.get_logger().setLevel("ERROR")
@@ -32,12 +35,14 @@ class LanguageModel(tf.keras.Model):
             "max_seq_length": 50,
             "batch_size": 200,
             "token_embedding_size": 64,
-            "rnn_hidden_dim": 64,
+            "encoder_rnn_hidden_dim": 64,
+            "decoder_rnn_hidden_dim": 64,
         }
 
-    def __init__(self, hyperparameters: Dict[str, Any], vocab: Vocabulary,) -> None:
+    def __init__(self, hyperparameters: Dict[str, Any], vocab_source: Vocabulary, vocab_target: Vocabulary) -> None:
         self.hyperparameters = hyperparameters
-        self.vocab = vocab
+        self.vocab_source = vocab_source
+        self.vocab_target = vocab_target
 
         # Also prepare optimizer:
         optimizer_name = self.hyperparameters["optimizer"].lower()
@@ -64,15 +69,8 @@ class LanguageModel(tf.keras.Model):
 
         super().__init__()
 
-        # 5# 1) Define embedding layer
-        self.embedding_layer = tf.keras.layers.Embedding(len(self.vocab), self.hyperparameters["token_embedding_size"])
-        # 5# 2) Define RNN on embedded tokens
-        self.gru = tf.keras.layers.GRU(self.hyperparameters["rnn_hidden_dim"],
-                                   return_sequences=True,
-                                   return_state=True,
-                                   recurrent_initializer='glorot_uniform')
-        # 5# 3) Define layer to project RNN outputs onto the vocabulary to obtain logits.
-        self.output_layer = tf.keras.layers.Dense(len(self.vocab))
+        self.encoder = GRU_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
+        self.decoder = GRU_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
 
     @property
     def run_id(self):
@@ -83,7 +81,8 @@ class LanguageModel(tf.keras.Model):
         # and then the default TF weight saving.
         data_to_store = {
             "model_class": self.__class__.__name__,
-            "vocab": self.vocab,
+            "vocab_source": self.vocab_source,
+            "vocab_target": self.vocab_target,
             "hyperparameters": self.hyperparameters,
         }
         with open(path, "wb") as out_file:
@@ -95,7 +94,7 @@ class LanguageModel(tf.keras.Model):
         with open(saved_model_path, "rb") as fh:
             saved_data = pickle.load(fh)
 
-        model = cls(saved_data["hyperparameters"], saved_data["vocab"])
+        model = cls(saved_data["hyperparameters"], saved_data["vocab_source"], saved_data["vocab_target"])
         model.build(tf.TensorShape([None, None]))
         model.load_weights(saved_model_path)
         return model
@@ -122,14 +121,28 @@ class LanguageModel(tf.keras.Model):
             tf.float32 tensor of shape [B, T, V], storing the distribution over output symbols
             for each timestep for each batch element.
         """
-        # 5# 1) Embed tokens
-        embedded = self.embedding_layer(token_ids)
-        # 5# 2) Run RNN on embedded tokens
-        output, state = self.gru(embedded)
-        # 5# 3) Project RNN outputs onto the vocabulary to obtain logits.
-        rnn_output_logits = self.output_layer(output) 
+        enc_hidden = self.encoder.initialize_hidden_state()
+        enc_output, enc_hidden = self.encoder(token_ids, enc_hidden)
 
-        return rnn_output_logits
+        dec_hidden = enc_hidden
+        dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * self.hyperparameters["batch_size"], 1)
+
+        
+        # tf.zeros((self.hyperparameters["batch_size"], 
+        #                    self.hyperparameters["max_seq_length"], 
+        #                    self.decoder.target_vocab_size), dtype=tf.dtypes.float32)
+        for t in range(1, self.hyperparameters["max_seq_length"]):
+            predictions, dec_hidden = self.decoder(dec_input, dec_hidden)
+            predicted_ids = tf.argmax(predictions[:,0,:], 1)
+            # the predicted ID is fed back into the model
+            dec_input = tf.expand_dims(predicted_ids, 1)
+            new_logits = tf.expand_dims(predictions[:,0,:], 1)
+            if t==1:
+                results = new_logits
+            else:
+                results = tf.concat([results, new_logits], 1)
+
+        return results
 
     def compute_loss_and_acc(
         self, rnn_output_logits: tf.Tensor, target_token_seq: tf.Tensor
@@ -160,16 +173,16 @@ class LanguageModel(tf.keras.Model):
 
         # Mask that contains True for the positions of valid tokens
         # and False for the positions of PAD 
-        mask = tf.math.not_equal(target_token_seq[:,1:], self.vocab.get_id_or_unk(self.vocab.get_pad()))
+        mask = tf.math.not_equal(target_token_seq[:,1:], self.vocab_target.get_id_or_unk(self.vocab_target.get_pad()))
 
         num_tokens = tf.math.count_nonzero(mask)
-        prediction = tf.argmax(rnn_output_logits[:,:-1,:], 2) 
+        prediction = tf.argmax(rnn_output_logits, 2) 
         compared = tf.cast(tf.math.equal(target_token_seq[:,1:], prediction), tf.int32) * tf.cast(mask, tf.int32)
         num_correct_tokens = tf.math.count_nonzero(compared)
        
         # 7# Mask out CE loss for padding tokens
         token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logits=tf.boolean_mask(rnn_output_logits[:,:-1,:], mask),
+            logits=tf.boolean_mask(rnn_output_logits, mask),
             labels=tf.boolean_mask(target_token_seq[:,1:], mask))
         token_ce_loss = tf.reduce_sum(token_ce_loss)
         
@@ -188,12 +201,14 @@ class LanguageModel(tf.keras.Model):
     ):
         total_loss, num_samples, num_tokens, num_correct_tokens = 0.0, 0, 0, 0
         for step, minibatch_data in enumerate(minibatches):
+            sources = np.array([x[0] for x in minibatch_data])
+            targets = np.array([x[1] for x in minibatch_data])
             with tf.GradientTape() as tape:
-                model_outputs = self.compute_logits(minibatch_data, training=training)
-                result = self.compute_loss_and_acc(model_outputs, minibatch_data)
+                model_outputs = self.compute_logits(sources, training=training)
+                result = self.compute_loss_and_acc(model_outputs, targets)
 
             total_loss += result.token_ce_loss
-            num_samples += minibatch_data.shape[0]
+            num_samples += sources.shape[0]
             num_tokens += result.num_predictions
             num_correct_tokens += result.num_correct_token_predictions
 

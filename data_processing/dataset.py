@@ -226,6 +226,25 @@ def tensorise_data(
 
     return np.array(tensorised_dataset, dtype=np.int32)
 
+def prepare_data(
+    vocab_source: Vocabulary, vocab_target: Vocabulary, data: dict, 
+    max_source_len:int, max_target_len:int, max_num_files: Optional[int] = None
+) -> np.ndarray:
+    data_source = tensorise_data(
+        vocab_source,
+        length=max_source_len,
+        data=data,
+        source_or_target = "source",
+        max_num_files=max_num_files,
+    )
+    data_target = tensorise_data(
+        vocab_target,
+        length=max_target_len,
+        data=data,
+        source_or_target = "target",
+        max_num_files=max_num_files,
+    )
+    return np.array(list(zip(data_source, data_target)), dtype=np.int32)
 
 def get_minibatch_iterator(
     token_seqs: np.ndarray,
