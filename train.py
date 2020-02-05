@@ -23,8 +23,10 @@ import numpy as np
 from docopt import docopt
 from dpu_utils.utils import run_and_debug
 
-from data_processing.dataset import build_vocab_from_data_dir, load_data_from_dir, get_minibatch_iterator
+from data_processing.dataset import build_vocab, tensorise_data, get_minibatch_iterator
 from models.model_main import LanguageModel
+
+import pickle
 
 def train(
     model: LanguageModel,
@@ -96,27 +98,32 @@ def run(arguments) -> None:
     )
 
     print("Loading data ...")
-    vocab = build_vocab_from_data_dir(
-        data_dir=args["TRAIN_DATA_DIR"],
+    data = pickle.load(open('./data/' + args["TRAIN_DATA_DIR"] + '.pkl', 'rb'))
+    vocab_comments = build_vocab(
+        data = data,
+        source_or_target = "target",
         vocab_size=hyperparameters["max_vocab_size"],
         max_num_files=max_num_files,
     )
-    print(f"  Built vocabulary of {len(vocab)} entries.")
-    train_data = load_data_from_dir(
-        vocab,
+    print(f"  Built vocabulary of {len(vocab_comments)} entries.")
+    train_data = tensorise_data(
+        vocab_comments,
         length=hyperparameters["max_seq_length"],
-        data_dir=args["TRAIN_DATA_DIR"],
+        data=data,
+        source_or_target = "target",
         max_num_files=max_num_files,
     )
     print(f"  Loaded {train_data.shape[0]} training samples from {args['TRAIN_DATA_DIR']}.")
-    valid_data = load_data_from_dir(
-        vocab,
+    valid_data = pickle.load(open('./data/' + args["VALID_DATA_DIR"] + '.pkl', 'rb'))
+    valid_data = tensorise_data(
+        vocab_comments,
         length=hyperparameters["max_seq_length"],
-        data_dir=args["VALID_DATA_DIR"],
+        data=data,
+        source_or_target = "target",
         max_num_files=max_num_files,
     )
     print(f"  Loaded {valid_data.shape[0]} validation samples from {args['VALID_DATA_DIR']}.")
-    model = LanguageModel(hyperparameters, vocab)
+    model = LanguageModel(hyperparameters, vocab_comments)
     model.build(([None, hyperparameters["max_seq_length"]]))
     print(
         f"Constructed model, using the following hyperparameters: {json.dumps(hyperparameters)}"

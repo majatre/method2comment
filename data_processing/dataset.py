@@ -8,8 +8,12 @@ import collections
 from more_itertools import chunked
 from dpu_utils.mlutils.vocabulary import Vocabulary
 
-from graph_pb2 import Graph
-from graph_pb2 import FeatureNode, FeatureEdge
+from data_processing.graph_pb2 import Graph
+from data_processing.graph_pb2 import FeatureNode, FeatureEdge
+
+import nltk
+nltk.download('punkt')
+from nltk.tokenize import word_tokenize
 
 DATA_FILE_EXTENSION = "proto"
 START_SYMBOL = "%START%"
@@ -27,62 +31,6 @@ def get_data_files_from_directory(
     else:
         files = list(files)
     return files
-
-
-def load_data_file(file_path: str) -> Iterable[List[str]]:
-    """
-    Load a single data file, returning token streams.
-
-    Args:
-        file_path: The path to a data file.
-
-    Returns:
-        Iterable of lists of strings, each a list of tokens observed in the data.
-    """
-
-    g = Graph()
-    with open(file_path, "rb") as f:
-        g.ParseFromString(f.read())
-
-    # Build a dictionary of nodes indexed by id 
-    # by start position and end position
-    nodes_dict = {}
-    tokens_by_start_pos = {}
-    tokens_by_end_pos = {}
-    # A list of methods root nodes
-    methods = []
-    for n in g.node:
-        nodes_dict[n.id] = n
-        if n.contents == 'METHOD':
-            methods.append(n)
-        if n.type in (FeatureNode.TOKEN, FeatureNode.IDENTIFIER_TOKEN):
-            tokens_by_start_pos[n.startPosition] = n
-            tokens_by_end_pos[n.endPosition] = n
-    
-    # Build a dictionary of edges indexed by source id
-    edges_dict = {}
-    for e in g.edge:
-        if e.sourceId in edges_dict:
-            edges_dict[e.sourceId].append(e)
-        else:
-            edges_dict[e.sourceId] = [e]
-
-    for m in methods:
-        # Start with a node that is a token and starts at the same position 
-        # as method's start postion
-        nid = tokens_by_start_pos[m.startPosition].id
-        tokens = []
-
-        # Follow the 'next token' edges up to the token finishing at end postion
-        while nid != tokens_by_end_pos[m.endPosition].id:
-            tokens.append(nodes_dict[nid].contents.lower())
-            if nid in edges_dict:
-                for e in edges_dict[nid]:
-                    if e.type == FeatureEdge.NEXT_TOKEN:
-                        nid = e.destinationId
-
-        if len(tokens) > 0:
-           yield tokens
 
 
 def format_comment_to_plain_text(comment: str):
@@ -187,31 +135,34 @@ def generate_dataset_from_dir(data_dir):
     return methods_code, methods_comments
 
 
-def build_vocab_from_data_dir(
-    data_dir: str, vocab_size: int, max_num_files: Optional[int] = None
+def build_vocab(
+    data: dict, source_or_target: str, vocab_size: int, max_num_files: Optional[int] = None
 ) -> Vocabulary:
     """
     Compute model metadata such as a vocabulary.
 
     Args:
-        data_dir: Directory containing data files.
+        data: Dataset of method code and comments.
+        source_or_taget: 'source' for methods source, 'target' for methods comments.
         vocab_size: Maximal size of the vocabulary to create.
         max_num_files: Maximal number of files to load.
     """
-
-    data_files = get_data_files_from_directory(data_dir, max_num_files)
+    if source_or_target == "source":
+        dataset = data['methods_code']
+    else:
+        dataset = data['methods_comments']
 
     vocab = Vocabulary(add_unk=True, add_pad=True)
     # Make sure to include the START_SYMBOL in the vocabulary as well:
     vocab.add_or_get_id(START_SYMBOL)
     vocab.add_or_get_id(END_SYMBOL)
-
     cnt = collections.Counter()
 
-    for path in data_files:
-        for token_seq in load_data_file(path):
-            for token in token_seq:
-                cnt[token] += 1
+    for token_seq in dataset:
+        if source_or_target == "target":
+            token_seq = word_tokenize(token_seq)
+        for token in token_seq:
+            cnt[token] += 1
 
     for token, _ in cnt.most_common(vocab_size):
         vocab.add_or_get_id(token)
@@ -246,32 +197,34 @@ def tensorise_token_sequence(
 
     return tensorised
 
-def load_data_from_dir(
-    vocab: Vocabulary, length: int, data_dir: str, max_num_files: Optional[int] = None
+
+def tensorise_data(
+    vocab: Vocabulary, length: int, data: dict, source_or_target: str, max_num_files: Optional[int] = None
 ) -> np.ndarray:
     """
-    Load and tensorise data.
-
+    Tensorise data.
     Args:
         vocab: Vocabulary to use for mapping tokens to integer IDs
         length: Length to truncate/pad sequences to.
-        data_dir: Directory from which to load the data.
+        data: Dictionary that contains the data.
+        source_or_taget: 'source' for methods source, 'target' for methods comments.
         max_num_files: Number of files to load at most.
-
     Returns:
         numpy int32 array of shape [None, length], containing the tensorised
         data.
     """
-    data_files = get_data_files_from_directory(data_dir, max_num_files)
-    data = np.array(
-        list(
-            tensorise_token_sequence(vocab, length, token_seq)
-            for data_file in data_files
-            for token_seq in load_data_file(data_file)
-        ),
-        dtype=np.int32,
-    )
-    return data
+    if source_or_target == "source":
+        dataset = data['methods_code']
+    else:
+        dataset = data['methods_comments']
+
+    tensorised_dataset = []
+    for token_seq in dataset:
+        if source_or_target == "target":
+            token_seq = word_tokenize(token_seq)
+        tensorised_dataset.append(tensorise_token_sequence(vocab, length, token_seq))
+
+    return np.array(tensorised_dataset, dtype=np.int32)
 
 
 def get_minibatch_iterator(
