@@ -7,4 +7,4 @@ methods_code, methods_comments = generate_dataset_from_dir(
 
 # Store data
 pickle.dump({'methods_code': methods_code, 'methods_comments': methods_comments}, 
-    open('data/methods_code_comments_all.pkl', 'wb'))
+    open('data/methods_code_comments_all_without_jsoup.pkl', 'wb'))

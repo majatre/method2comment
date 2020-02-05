@@ -152,7 +152,9 @@ def load_data_file_methods(file_path: str):
             if n.type == FeatureNode.COMMENT_JAVADOC and m.id == edges_dict[n.id][0].destinationId:
                 comment = format_comment_to_plain_text(n.contents)
 
-        if len(tokens) > 0 and len(comment) > 0:
+        # I add only the non-empty methods that have comments.
+        # I also ensure that method is not vrtual and has a body starting with '{'. 
+        if len(tokens) > 0 and len(comment) > 0 and 'lbrace' in tokens:
            methods_code.append(tokens)
            methods_comments.append(comment)
         #    print(tokens)
