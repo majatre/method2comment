@@ -8,8 +8,8 @@ import collections
 from more_itertools import chunked
 from dpu_utils.mlutils.vocabulary import Vocabulary
 
-from data_processing.graph_pb2 import Graph
-from data_processing.graph_pb2 import FeatureNode, FeatureEdge
+from graph_pb2 import Graph
+from graph_pb2 import FeatureNode, FeatureEdge
 
 # import nltk
 # nltk.download('punkt')
@@ -34,15 +34,15 @@ def get_data_files_from_directory(
 
 
 def format_comment_to_plain_text(comment: str):
-    # To delete 
-    try: 
-        comment = comment[:comment.index("@")]
-    except:
-        pass
+    # Delete the params at the end of JavaDoc.
+    if comment.find("* @") > 0:
+        comment = comment[:comment.find("* @")]
     # Use regular expression to eliminate special JavaDoc characters
     # and unnecessary whitespaces.
     comment = re.sub(r'[*/]', ' ',  comment)  
     comment = re.sub(r'\s+', ' ',  comment)  
+    comment = re.sub(r'<[^>]>', ' ',  comment)  
+    comment = re.sub(r'{@\w+\s([^}]*)}', r'\1', comment)
     return comment.strip()
 
 
