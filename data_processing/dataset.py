@@ -11,8 +11,8 @@ from dpu_utils.mlutils.vocabulary import Vocabulary
 from data_processing.graph_pb2 import Graph
 from data_processing.graph_pb2 import FeatureNode, FeatureEdge
 
-import nltk
-nltk.download('punkt')
+# import nltk
+# nltk.download('punkt')
 from nltk.tokenize import word_tokenize
 
 DATA_FILE_EXTENSION = "proto"

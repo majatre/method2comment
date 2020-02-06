@@ -7,6 +7,8 @@ data = pickle.load(open('./data/valid.pkl', 'rb'))
 methods_code = data['methods_code']
 methods_comments = data['methods_comments']
 
+print(methods_code[0], methods_comments[1])
+
 print("The corpus contains {} methods with comments".format(len(methods_comments)))
 
 methods_length = [len(method) for method in methods_code]

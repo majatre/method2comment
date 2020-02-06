@@ -9,6 +9,8 @@ from dpu_utils.mlutils.vocabulary import Vocabulary
 from models import GRU_encoder
 from models import GRU_decoder
 
+from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
+
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 tf.get_logger().setLevel("ERROR")
@@ -166,8 +168,8 @@ class LanguageModel(tf.keras.Model):
         """
         # 5# 4) Compute CE loss for all but the last timestep:
         # Commented out because of the step 7
-        # token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(target_token_seq[:,1:], rnn_output_logits[:,:-1,:])
-        # token_ce_loss = tf.reduce_sum(token_ce_loss)
+        token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(target_token_seq[:,1:], rnn_output_logits[:,:-1,:])
+        token_ce_loss = tf.reduce_sum(token_ce_loss)
 
         # 6# Compute number of (correct) predictions
 
@@ -181,26 +183,41 @@ class LanguageModel(tf.keras.Model):
         num_correct_tokens = tf.math.count_nonzero(compared)
        
         # 7# Mask out CE loss for padding tokens
-        token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logits=tf.boolean_mask(rnn_output_logits, mask),
-            labels=tf.boolean_mask(target_token_seq[:,1:], mask))
-        token_ce_loss = tf.reduce_sum(token_ce_loss)
+        # token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        #     logits=tf.boolean_mask(rnn_output_logits, mask),
+        #     labels=tf.boolean_mask(target_token_seq[:,1:], mask))
+        # token_ce_loss = tf.reduce_sum(token_ce_loss)
         
         return LanguageModelLoss(token_ce_loss, num_tokens, num_correct_tokens)
 
+    def get_text_from_tensor(self, output: tf.Tensor):
+        texts = []
+        for token_seq in output:
+            texts.append([self.vocab_target.get_name_for_id(t) for t in token_seq])
+        return texts
+
+    def predict_single_comment(self, token_seq: List[int]):
+        self.hyperparameters["batch_size"] = 1
+        output_logits = self.compute_logits(
+            np.array([token_seq], dtype=np.int32), training=False
+        )
+        next_tok_logits = output_logits[0, :, :]
+        next_tok_ids = tf.argmax(next_tok_logits, 1).numpy()
+        return next_tok_ids
+    
     def predict_next_token(self, token_seq: List[int]):
         output_logits = self.compute_logits(
             np.array([token_seq], dtype=np.int32), training=False
         )
-        next_tok_logits = output_logits[0, -1, :]
-        next_tok_probs = tf.nn.softmax(next_tok_logits)
-        return next_tok_probs.numpy()
+        prediction = tf.argmax(output_logits, 2) 
+        return prediction.numpy()
 
     def run_one_epoch(
         self, minibatches: Iterable[np.ndarray], training: bool = False,
     ):
         total_loss, num_samples, num_tokens, num_correct_tokens = 0.0, 0, 0, 0
         for step, minibatch_data in enumerate(minibatches):
+            self.hyperparameters["batch_size"] = len(minibatch_data)
             sources = np.array([x[0] for x in minibatch_data])
             targets = np.array([x[1] for x in minibatch_data])
             with tf.GradientTape() as tape:
@@ -212,6 +229,18 @@ class LanguageModel(tf.keras.Model):
             num_tokens += result.num_predictions
             num_correct_tokens += result.num_correct_token_predictions
 
+            target_texts = self.get_text_from_tensor(targets)
+            predicted_texts = self.get_text_from_tensor(tf.argmax(model_outputs,2))
+            # for a, b in zip(predicted_texts, target_texts):
+            #     print('Target', ' '.join(b))
+            #     print('Prediction', ' '.join(a))
+
+
+            ref = [[x[:x.index("%END%")] if "%END%" in x else x] for x in target_texts]
+            hyp = [x for x in predicted_texts]
+            bleu_score = corpus_bleu(ref, predicted_texts)
+            print(bleu_score)
+
             if training:
                 gradients = tape.gradient(
                     result.token_ce_loss, self.trainable_variables
@@ -219,13 +248,14 @@ class LanguageModel(tf.keras.Model):
                 self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
             print(
-                "   Batch %4i: Epoch avg. loss: %.5f || Batch loss: %.5f | acc: %.5f"
+                "   Batch %4i: Epoch avg. loss: %.5f || Batch loss: %.5f | acc: %.5f | bleu: %.5f" 
                 % (
                     step,
                     total_loss / num_samples,
                     result.token_ce_loss,
                     float(result.num_correct_token_predictions)
                     / (float(result.num_predictions) + float(1e-7)),
+                    bleu_score
                 ),
                 end="\r",
             )

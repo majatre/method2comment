@@ -22,26 +22,15 @@ from models.model_main import LanguageModel
 def run(arguments) -> None:
     model = LanguageModel.restore(arguments["TRAINED_MODEL"])
 
-    def compute_next_token(token_seq: List[str], num_cands: int = 3) -> str:
-        tensorised_seq = tensorise_token_sequence(model.vocab, len(token_seq) + 1, token_seq)
-        next_tok_probs = model.predict_next_token(tensorised_seq)
-        top_idxs = (-next_tok_probs).argsort()[:num_cands]
-        return [(model.vocab.get_name_for_id(top_idx),
-                 next_tok_probs[top_idx])
-                for top_idx in top_idxs]
+    token_seq = arguments['TOKENS']
+    tensorised_seq = tensorise_token_sequence(model.vocab_source, len(token_seq) + 1, token_seq)
+    predictions = model.predict_single_comment(tensorised_seq)
 
-    tokens = arguments['TOKENS']
-    for idx in range(int(arguments['--num-steps'])):
-        cands = compute_next_token(tokens)
-        print("Prediction at step %i (tokens %s):" % (idx, tokens))
-        for (token, prob) in cands:
-            print(" Prob %.3f: %s" % (prob, token))
-        next_tok = cands[0][0]
-        if next_tok == END_SYMBOL:
-            print('Reached end of sequence. Stopping.')
-            break
-        print("Continuing with token %s" % next_tok)
-        tokens.append(next_tok)
+    comment = ""
+    for token_id in predictions:
+        token = model.vocab_target.get_name_for_id(token_id)
+        comment += token + " "
+    print(comment)
 
 
 if __name__ == '__main__':

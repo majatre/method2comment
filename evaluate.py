@@ -11,19 +11,22 @@ Options:
 from docopt import docopt
 from dpu_utils.utils import run_and_debug
 
-from data_processing.dataset import load_data_from_dir, get_minibatch_iterator
+from data_processing.dataset import prepare_data, get_minibatch_iterator
 from models.model_main import LanguageModel
 
+import pickle
 
 def run(arguments) -> None:
     print("Loading data ...")
     model = LanguageModel.restore(arguments["TRAINED_MODEL"])
     print(f"  Loaded trained model from {arguments['TRAINED_MODEL']}.")
 
-    test_data = load_data_from_dir(
-        model.vocab,
-        length=model.hyperparameters["max_seq_length"],
-        data_dir=arguments["TEST_DATA_DIR"],
+    test_data = pickle.load(open('./data/' + args["TEST_DATA_DIR"] + '.pkl', 'rb'))
+    test_data = prepare_data(
+        model.vocab_source, model.vocab_target,
+        data=test_data,
+        max_source_len=model.hyperparameters["max_seq_length"],
+        max_target_len=model.hyperparameters["max_seq_length"],
         max_num_files=arguments.get("--max-num-files"),
     )
     print(
