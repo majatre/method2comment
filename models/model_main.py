@@ -8,6 +8,8 @@ from dpu_utils.mlutils.vocabulary import Vocabulary
 
 from models import GRU_encoder
 from models import GRU_decoder
+from models import LSTM_encoder
+from models import LSTM_decoder
 
 from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
@@ -39,6 +41,7 @@ class LanguageModel(tf.keras.Model):
             "token_embedding_size": 64,
             "encoder_rnn_hidden_dim": 64,
             "decoder_rnn_hidden_dim": 64,
+            "rnn_cell": "LSTM"  # One of "GRU", "LSTM"
         }
 
     def __init__(self, hyperparameters: Dict[str, Any], vocab_source: Vocabulary, vocab_target: Vocabulary) -> None:
@@ -71,8 +74,12 @@ class LanguageModel(tf.keras.Model):
 
         super().__init__()
 
-        self.encoder = GRU_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
-        self.decoder = GRU_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
+        if self.hyperparameters["rnn_cell"] == "GRU":
+            self.encoder = GRU_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
+            self.decoder = GRU_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
+        else: 
+            self.encoder = LSTM_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
+            self.decoder = LSTM_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
 
     @property
     def run_id(self):
