@@ -216,6 +216,8 @@ class LanguageModel(tf.keras.Model):
         self, minibatches: Iterable[np.ndarray], training: bool = False,
     ):
         total_loss, num_samples, num_tokens, num_correct_tokens = 0.0, 0, 0, 0
+        ground_truth = []
+        predictions = []
         for step, minibatch_data in enumerate(minibatches):
             self.hyperparameters["batch_size"] = len(minibatch_data)
             sources = np.array([x[0] for x in minibatch_data])
@@ -236,11 +238,14 @@ class LanguageModel(tf.keras.Model):
             #     print('Prediction', ' '.join(a))
 
 
-            ref = [[x[:x.index("%END%")] if "%END%" in x else x] for x in target_texts]
+            ref = [[x[1:x.index("%END%")] if "%END%" in x else x[1:]] for x in target_texts]
             # hyp = [x for x in predicted_texts]
-            smoothing = SmoothingFunction().method
+            smoothing = SmoothingFunction().method4
             bleu_score = corpus_bleu(ref, predicted_texts, smoothing_function=smoothing)
             # print(bleu_score)
+
+            ground_truth += ref
+            predictions += predicted_texts
 
             if training:
                 gradients = tape.gradient(
@@ -258,10 +263,15 @@ class LanguageModel(tf.keras.Model):
                     / (float(result.num_predictions) + float(1e-7)),
                     bleu_score
                 ),
-                end="\r",
+                end="\n",
             )
         print("\r\x1b[K", end="")
+
+        smoothing = SmoothingFunction().method4
+        bleu_score = corpus_bleu(ground_truth, predictions, smoothing_function=smoothing)
+
         return (
             total_loss / num_samples,
             float(num_correct_tokens) / (float(num_tokens) + 1e-7),
+            bleu_score
         )

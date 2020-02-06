@@ -37,7 +37,7 @@ def train(
     patience: int,
     save_file: str,
 ):
-    best_valid_loss, _ = model.run_one_epoch(
+    best_valid_loss, _, _ = model.run_one_epoch(
         get_minibatch_iterator(valid_data, batch_size, is_training=False),
         training=False,
     )
@@ -47,16 +47,16 @@ def train(
     train_time_start = time.time()
     for epoch in range(1, max_epochs + 1):
         print(f"== Epoch {epoch}")
-        train_loss, train_acc = model.run_one_epoch(
+        train_loss, train_acc, train_bleu = model.run_one_epoch(
             get_minibatch_iterator(train_data, batch_size, is_training=True),
             training=True,
         )
-        print(f" Train:  Loss {train_loss:.4f}, Acc {train_acc:.3f}")
-        valid_loss, valid_acc = model.run_one_epoch(
+        print(f" Train:  Loss {train_loss:.4f}, Acc {train_acc:.3f}, BLEU {train_bleu:.3f}")
+        valid_loss, valid_acc, valid_bleu = model.run_one_epoch(
             get_minibatch_iterator(valid_data, batch_size, is_training=False),
             training=False,
         )
-        print(f" Valid:  Loss {valid_loss:.4f}, Acc {valid_acc:.3f}")
+        print(f" Valid:  Loss {valid_loss:.4f}, Acc {valid_acc:.3f}, BLEU {valid_bleu:.3f}")
 
         # Save if good enough.
         if valid_loss < best_valid_loss:
