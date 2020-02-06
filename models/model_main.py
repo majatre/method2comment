@@ -10,7 +10,7 @@ from models import GRU_encoder
 from models import GRU_decoder
 
 from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
-
+from nltk.translate.bleu_score import SmoothingFunction
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 tf.get_logger().setLevel("ERROR")
@@ -168,7 +168,7 @@ class LanguageModel(tf.keras.Model):
         """
         # 5# 4) Compute CE loss for all but the last timestep:
         # Commented out because of the step 7
-        token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(target_token_seq[:,1:], rnn_output_logits[:,:-1,:])
+        token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(target_token_seq[:,1:], rnn_output_logits)
         token_ce_loss = tf.reduce_sum(token_ce_loss)
 
         # 6# Compute number of (correct) predictions
@@ -237,9 +237,10 @@ class LanguageModel(tf.keras.Model):
 
 
             ref = [[x[:x.index("%END%")] if "%END%" in x else x] for x in target_texts]
-            hyp = [x for x in predicted_texts]
-            bleu_score = corpus_bleu(ref, predicted_texts)
-            print(bleu_score)
+            # hyp = [x for x in predicted_texts]
+            smoothing = SmoothingFunction().method
+            bleu_score = corpus_bleu(ref, predicted_texts, smoothing_function=smoothing)
+            # print(bleu_score)
 
             if training:
                 gradients = tape.gradient(
