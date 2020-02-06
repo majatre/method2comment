@@ -129,10 +129,6 @@ class LanguageModel(tf.keras.Model):
         dec_hidden = enc_hidden
         dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * self.hyperparameters["batch_size"], 1)
 
-        
-        # tf.zeros((self.hyperparameters["batch_size"], 
-        #                    self.hyperparameters["max_seq_length"], 
-        #                    self.decoder.target_vocab_size), dtype=tf.dtypes.float32)
         for t in range(1, self.hyperparameters["max_seq_length"]):
             predictions, dec_hidden = self.decoder(dec_input, dec_hidden)
             predicted_ids = tf.argmax(predictions[:,0,:], 1)
@@ -168,8 +164,8 @@ class LanguageModel(tf.keras.Model):
         """
         # 5# 4) Compute CE loss for all but the last timestep:
         # Commented out because of the step 7
-        token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(target_token_seq[:,1:], rnn_output_logits)
-        token_ce_loss = tf.reduce_sum(token_ce_loss)
+        # token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(target_token_seq[:,1:], rnn_output_logits)
+        # token_ce_loss = tf.reduce_sum(token_ce_loss)
 
         # 6# Compute number of (correct) predictions
 
@@ -183,10 +179,10 @@ class LanguageModel(tf.keras.Model):
         num_correct_tokens = tf.math.count_nonzero(compared)
        
         # 7# Mask out CE loss for padding tokens
-        # token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        #     logits=tf.boolean_mask(rnn_output_logits, mask),
-        #     labels=tf.boolean_mask(target_token_seq[:,1:], mask))
-        # token_ce_loss = tf.reduce_sum(token_ce_loss)
+        token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+            logits=tf.boolean_mask(rnn_output_logits, mask),
+            labels=tf.boolean_mask(target_token_seq[:,1:], mask))
+        token_ce_loss = tf.reduce_sum(token_ce_loss)
         
         return LanguageModelLoss(token_ce_loss, num_tokens, num_correct_tokens)
 
@@ -233,19 +229,18 @@ class LanguageModel(tf.keras.Model):
 
             target_texts = self.get_text_from_tensor(targets)
             predicted_texts = self.get_text_from_tensor(tf.argmax(model_outputs,2))
-            # for a, b in zip(predicted_texts, target_texts):
-            #     print('Target', ' '.join(b))
-            #     print('Prediction', ' '.join(a))
 
-
-            ref = [[x[1:x.index("%END%")] if "%END%" in x else x[1:]] for x in target_texts]
-            # hyp = [x for x in predicted_texts]
+            ref = [([x[1:x.index("%END%")] if "%END%" in x else x[1:]]) for x in target_texts]
+            hyp = [(x[:x.index("%END%")] if "%END%" in x else x) for x in predicted_texts]
             smoothing = SmoothingFunction().method4
             bleu_score = corpus_bleu(ref, predicted_texts, smoothing_function=smoothing)
+            # for r, h in zip(ref, hyp):
+            #     print('Target', ' '.join(r[0]))
+            #     print('Prediction', ' '.join(h))
             # print(bleu_score)
 
             ground_truth += ref
-            predictions += predicted_texts
+            predictions += hyp
 
             if training:
                 gradients = tape.gradient(

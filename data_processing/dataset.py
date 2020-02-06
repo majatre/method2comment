@@ -8,8 +8,8 @@ import collections
 from more_itertools import chunked
 from dpu_utils.mlutils.vocabulary import Vocabulary
 
-from graph_pb2 import Graph
-from graph_pb2 import FeatureNode, FeatureEdge
+from data_processing.graph_pb2 import Graph
+from data_processing.graph_pb2 import FeatureNode, FeatureEdge
 
 # import nltk
 # nltk.download('punkt')
