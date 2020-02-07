@@ -131,7 +131,7 @@ def run(arguments) -> None:
     )
     print(f"  Loaded {valid_data.shape[0]} validation samples from {args['VALID_DATA_DIR']}.")
     model = LanguageModel(hyperparameters, vocab_source, vocab_target)
-    model.build(([None, hyperparameters["max_seq_length"]]))
+    model.build(([None, None, hyperparameters["max_seq_length"]]))
     print(
         f"Constructed model, using the following hyperparameters: {json.dumps(hyperparameters)}"
     )

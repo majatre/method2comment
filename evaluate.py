@@ -33,7 +33,7 @@ def run(arguments) -> None:
         f"  Loaded {test_data.shape[0]} test samples from {arguments['TEST_DATA_DIR']}."
     )
 
-    test_loss, test_acc = model.run_one_epoch(
+    test_loss, test_acc, bleu = model.run_one_epoch(
         get_minibatch_iterator(
             test_data,
             model.hyperparameters["batch_size"],
@@ -42,7 +42,7 @@ def run(arguments) -> None:
         ),
         training=False,
     )
-    print(f"Test:  Loss {test_loss:.4f}, Acc {test_acc:.3f}")
+    print(f"Test:  Loss {test_loss:.4f}, Acc {test_acc:.3f}, BLEU {bleu:.3f}")
 
 
 if __name__ == "__main__":

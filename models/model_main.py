@@ -104,7 +104,7 @@ class LanguageModel(tf.keras.Model):
             saved_data = pickle.load(fh)
 
         model = cls(saved_data["hyperparameters"], saved_data["vocab_source"], saved_data["vocab_target"])
-        model.build(tf.TensorShape([None, None]))
+        model.build(tf.TensorShape([None, None, None]))
         model.load_weights(saved_model_path)
         return model
 
@@ -114,10 +114,12 @@ class LanguageModel(tf.keras.Model):
 
         super().build(input_shape)
 
-    def call(self, inputs, training):
-        return self.compute_logits(inputs, training)
+    def call(self, data, training):
+        inputs = data[0] 
+        target_token_seq = data[1] 
+        return self.compute_logits(inputs, target_token_seq, training)
 
-    def compute_logits(self, token_ids: tf.Tensor, training: bool) -> tf.Tensor:
+    def compute_logits(self, token_ids: tf.Tensor, target_token_seq: tf.Tensor, training: bool) -> tf.Tensor:
         """
         Implements a language model, where each output is conditional on the current
         input and inputs processed so far.
@@ -135,12 +137,16 @@ class LanguageModel(tf.keras.Model):
 
         dec_hidden = enc_hidden
         dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * self.hyperparameters["batch_size"], 1)
-
+        
         for t in range(1, self.hyperparameters["max_seq_length"]):
             predictions, dec_hidden = self.decoder(dec_input, dec_hidden)
             predicted_ids = tf.argmax(predictions[:,0,:], 1)
-            # the predicted ID is fed back into the model
-            dec_input = tf.expand_dims(predicted_ids, 1)
+            if training:
+              # using teacher forcing
+              dec_input = tf.expand_dims(target_token_seq[:, t], 1)
+            else:
+              # the predicted ID is fed back into the model
+              dec_input = tf.expand_dims(predicted_ids, 1)
             new_logits = tf.expand_dims(predictions[:,0,:], 1)
             if t==1:
                 results = new_logits
@@ -226,7 +232,7 @@ class LanguageModel(tf.keras.Model):
             sources = np.array([x[0] for x in minibatch_data])
             targets = np.array([x[1] for x in minibatch_data])
             with tf.GradientTape() as tape:
-                model_outputs = self.compute_logits(sources, training=training)
+                model_outputs = self.compute_logits(sources, targets, training=training)
                 result = self.compute_loss_and_acc(model_outputs, targets)
 
             total_loss += result.token_ce_loss
