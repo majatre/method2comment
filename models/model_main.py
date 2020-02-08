@@ -137,23 +137,24 @@ class LanguageModel(tf.keras.Model):
 
         dec_hidden = enc_hidden
         dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * self.hyperparameters["batch_size"], 1)
-        
-        for t in range(1, self.hyperparameters["max_seq_length"]):
-            predictions, dec_hidden = self.decoder(dec_input, dec_hidden)
-            predicted_ids = tf.argmax(predictions[:,0,:], 1)
-            if training:
-              # using teacher forcing
-              dec_input = tf.expand_dims(target_token_seq[:, t], 1)
-            else:
-              # the predicted ID is fed back into the model
-              dec_input = tf.expand_dims(predicted_ids, 1)
-            new_logits = tf.expand_dims(predictions[:,0,:], 1)
-            if t==1:
-                results = new_logits
-            else:
-                results = tf.concat([results, new_logits], 1)
 
-        return results
+        if training:
+          # Use teacher forcing
+          predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden)
+          return predictions
+        else:
+          # The predicted ID is fed back into the model
+          for t in range(1, self.hyperparameters["max_seq_length"]):
+              predictions, dec_hidden = self.decoder(dec_input, dec_hidden)
+              predicted_ids = tf.argmax(predictions[:,0,:], 1)
+              dec_input = tf.expand_dims(predicted_ids, 1)
+              new_logits = tf.expand_dims(predictions[:,0,:], 1)
+              if t==1:
+                  results = new_logits
+              else:
+                  results = tf.concat([results, new_logits], 1)
+
+          return results
 
     def compute_loss_and_acc(
         self, rnn_output_logits: tf.Tensor, target_token_seq: tf.Tensor
@@ -250,6 +251,7 @@ class LanguageModel(tf.keras.Model):
             # for r, h in zip(ref, hyp):
             #     print('Target', ' '.join(r[0]))
             #     print('Prediction', ' '.join(h))
+            #     print('\n')
             # print(bleu_score)
 
             ground_truth += ref
