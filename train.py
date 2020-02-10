@@ -37,7 +37,7 @@ def train(
     patience: int,
     save_file: str,
 ):
-     best_valid_loss, best_valid_acc, _ = model.run_one_epoch(
+    best_valid_loss, best_valid_acc, _ = model.run_one_epoch(
         get_minibatch_iterator(valid_data, batch_size, is_training=False),
         training=False,
     )
