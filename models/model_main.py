@@ -277,11 +277,9 @@ class LanguageModel(tf.keras.Model):
             )
         print("\r\x1b[K", end="")
 
-        smoothing = SmoothingFunction().method4
-        bleu_score = corpus_bleu(ground_truth, predictions, smoothing_function=smoothing)
-
         return (
             total_loss / num_samples,
             float(num_correct_tokens) / (float(num_tokens) + 1e-7),
-            bleu_score
+            ground_truth, 
+            predictions
         )

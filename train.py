@@ -26,7 +26,10 @@ from dpu_utils.utils import run_and_debug
 from data_processing.dataset import build_vocab, tensorise_data, prepare_data, get_minibatch_iterator
 from models.model_main import LanguageModel
 
+from data_processing.metrics import calculate_metrics 
+
 import pickle
+
 
 def train(
     model: LanguageModel,
@@ -47,16 +50,21 @@ def train(
     train_time_start = time.time()
     for epoch in range(1, max_epochs + 1):
         print(f"== Epoch {epoch}")
-        train_loss, train_acc, train_bleu = model.run_one_epoch(
+        train_loss, train_acc, train_true, train_pred = model.run_one_epoch(
             get_minibatch_iterator(train_data, batch_size, is_training=True),
             training=True,
         )
-        print(f" Train:  Loss {train_loss:.4f}, Acc {train_acc:.3f}, BLEU {train_bleu:.3f}")
-        valid_loss, valid_acc, valid_bleu = model.run_one_epoch(
+        train_bleu, train_nist, train_dist, train_rouge2, train_rougel = calculate_metrics(train_true, train_pred)
+        print(f" Train:  Loss {train_loss:.4f}, Acc {train_acc:.3f}, BLEU {train_bleu:.3f}, NIST {train_nist:.3f},")
+        print(f"       NIST {train_nist:.3f}, DIST {train_dist:.3f}, ROUGE-2 {train_rouge2:.3f}, ROUGE-L {train_rougel:.3f}")
+
+        valid_loss, valid_acc, valid_true, valid_pred = model.run_one_epoch(
             get_minibatch_iterator(valid_data, batch_size, is_training=False),
             training=False,
         )
+        valid_bleu, valid_nist, valid_dist, valid_rouge2, valid_rougel = calculate_metrics(valid_true, valid_pred)
         print(f" Valid:  Loss {valid_loss:.4f}, Acc {valid_acc:.3f}, BLEU {valid_bleu:.3f}")
+        print(f"       NIST {valid_nist:.3f}, DIST {valid_dist:.3f}, ROUGE-2 {valid_rouge2:.3f}, ROUGE-L {valid_rougel:.3f}")
 
         # Save if good enough.
         if valid_acc >= best_valid_acc:

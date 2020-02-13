@@ -13,6 +13,7 @@ from dpu_utils.utils import run_and_debug
 
 from data_processing.dataset import prepare_data, get_minibatch_iterator
 from models.model_main import LanguageModel
+from data_processing.metrics import calculate_metrics 
 
 import pickle
 
@@ -33,7 +34,7 @@ def run(arguments) -> None:
         f"  Loaded {test_data.shape[0]} test samples from {arguments['TEST_DATA_DIR']}."
     )
 
-    test_loss, test_acc, bleu = model.run_one_epoch(
+    test_loss, test_acc, test_true, test_pred = model.run_one_epoch(
         get_minibatch_iterator(
             test_data,
             model.hyperparameters["batch_size"],
@@ -42,7 +43,9 @@ def run(arguments) -> None:
         ),
         training=False,
     )
-    print(f"Test:  Loss {test_loss:.4f}, Acc {test_acc:.3f}, BLEU {bleu:.3f}")
+    test_bleu, test_nist, test_dist, test_rouge2, test_rougel = calculate_metrics(test_true, test_pred)
+    print(f"Test:  Loss {test_loss:.4f}, Acc {test_acc:.3f}, BLEU {test_bleu:.3f}")
+    print(f"       NIST {test_nist:.3f}, DIST {test_dist:.3f}, ROUGE-2 {test_rouge2:.3f}, ROUGE-L {test_rougel:.3f}")
 
 
 if __name__ == "__main__":

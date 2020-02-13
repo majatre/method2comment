@@ -18,7 +18,6 @@ class Decoder(tf.keras.Model):
     # Define fully connected layer to project RNN outputs onto the vocabulary to obtain logits.
     self.fc = tf.keras.layers.Dense(vocab_size)
     self.attention = tf.keras.layers.Attention(self.hyperparameters["decoder_rnn_hidden_dim"])
-    # self.attention = BahdanauAttention(self.hyperparameters["decoder_rnn_hidden_dim"])
 
   def call(self, token_ids: tf.Tensor, hidden, enc_output):
     # Embed tokens
