@@ -61,4 +61,4 @@ class Decoder(tf.keras.Model):
     # output = tf.reshape(output, (-1, output.shape[2]))
     rnn_output_logits = self.fc(output) 
 
-    return rnn_output_logits, [state_h, state_c]
+    return rnn_output_logits, [state_h, state_c], attention_weights

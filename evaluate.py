@@ -42,6 +42,8 @@ def run(arguments) -> None:
         ),
         training=False,
     )
+
+
     print(f"Test:  Loss {test_loss:.4f}, Acc {test_acc:.3f}, BLEU {bleu:.3f}")
 
 

@@ -14,6 +14,9 @@ from models import LSTM_decoder
 from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1"
 tf.get_logger().setLevel("ERROR")
 
@@ -117,7 +120,7 @@ class LanguageModel(tf.keras.Model):
     def call(self, data, training):
         inputs = data[0] 
         target_token_seq = data[1] 
-        return self.compute_logits(inputs, target_token_seq, training)
+        return self.compute_logits(inputs, target_token_seq, training)[0]
 
     def compute_logits(self, token_ids: tf.Tensor, target_token_seq: tf.Tensor, training: bool) -> tf.Tensor:
         """
@@ -138,8 +141,15 @@ class LanguageModel(tf.keras.Model):
         dec_hidden = enc_hidden
         dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * self.hyperparameters["batch_size"], 1)
 
+        attention_plot = [ [] for i in range(self.hyperparameters["batch_size"])]
+    
         for t in range(1, self.hyperparameters["max_seq_length"]):
-            predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
+            predictions, dec_hidden, attention_weights = self.decoder(dec_input, dec_hidden, enc_output)
+            
+
+            # storing the attention weights to plot later on
+            for i in range(attention_weights.shape[0]):
+                attention_plot[i].append(tf.reshape(attention_weights[i], (-1, )) )
             predicted_ids = tf.argmax(predictions[:,0,:], 1)
             if training:
                 # Using teacher forcing
@@ -153,7 +163,7 @@ class LanguageModel(tf.keras.Model):
             else:
                 results = tf.concat([results, new_logits], 1)
 
-        return results
+        return results, attention_plot
 
     def compute_loss_and_acc(
         self, rnn_output_logits: tf.Tensor, target_token_seq: tf.Tensor
@@ -205,9 +215,31 @@ class LanguageModel(tf.keras.Model):
             texts.append([self.vocab_target.get_name_for_id(t) for t in token_seq])
         return texts
 
+    def get_source_from_tensor(self, output: tf.Tensor):
+        texts = []
+        for token_seq in output:
+            texts.append([self.vocab_source.get_name_for_id(t) for t in token_seq])
+        return texts
+
+    # function for plotting the attention weights
+    def plot_attention(self, attention, sentence, predicted_sentence):
+        fig = plt.figure(figsize=(10,10))
+        ax = fig.add_subplot(1, 1, 1)
+        ax.matshow(attention, cmap='viridis')
+
+        fontdict = {'fontsize': 14}
+
+        ax.set_xticklabels([''] + sentence, fontdict=fontdict, rotation=90)
+        ax.set_yticklabels([''] + predicted_sentence, fontdict=fontdict)
+
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+        plt.show()
+
     def predict_single_comment(self, token_seq: List[int]):
         self.hyperparameters["batch_size"] = 1
-        output_logits = self.compute_logits(
+        output_logits, attention_weights = self.compute_logits(
             np.array([token_seq], dtype=np.int32), training=False
         )
         next_tok_logits = output_logits[0, :, :]
@@ -221,6 +253,8 @@ class LanguageModel(tf.keras.Model):
         prediction = tf.argmax(output_logits, 2) 
         return prediction.numpy()
 
+
+
     def run_one_epoch(
         self, minibatches: Iterable[np.ndarray], training: bool = False,
     ):
@@ -232,7 +266,7 @@ class LanguageModel(tf.keras.Model):
             sources = np.array([x[0] for x in minibatch_data])
             targets = np.array([x[1] for x in minibatch_data])
             with tf.GradientTape() as tape:
-                model_outputs = self.compute_logits(sources, targets, training=training)
+                model_outputs, attention_plot = self.compute_logits(sources, targets, training=training)
                 result = self.compute_loss_and_acc(model_outputs, targets)
 
             total_loss += result.token_ce_loss
@@ -242,6 +276,7 @@ class LanguageModel(tf.keras.Model):
 
             target_texts = self.get_text_from_tensor(targets)
             predicted_texts = self.get_text_from_tensor(tf.argmax(model_outputs,2))
+            sources_texts = self.get_source_from_tensor(sources)
 
             ref = [([x[1:x.index("%END%")] if "%END%" in x else x[1:]]) for x in target_texts]
             hyp = [(x[:x.index("%END%")] if "%END%" in x else x) for x in predicted_texts]
@@ -255,6 +290,11 @@ class LanguageModel(tf.keras.Model):
 
             ground_truth += ref
             predictions += hyp
+
+            for i in range(5,15):
+                print(ref[i][0])
+                plot = attention_plot[i][:len(hyp[i])]
+                self.plot_attention(plot, sources_texts[i], hyp[i])
 
             if training:
                 gradients = tape.gradient(
