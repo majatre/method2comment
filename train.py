@@ -18,7 +18,9 @@ import json
 import os
 import time
 from typing import Dict, Any
+import datetime
 
+import tensorflow as tf
 import numpy as np
 from docopt import docopt
 from dpu_utils.utils import run_and_debug
@@ -40,7 +42,13 @@ def train(
     patience: int,
     save_file: str,
 ):
-    best_valid_loss, best_valid_acc, _ = model.run_one_epoch(
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_log_dir = 'logs/' + current_time + '/train'
+    valid_log_dir = 'logs/' + current_time + '/valid'
+    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    valid_summary_writer = tf.summary.create_file_writer(valid_log_dir)
+
+    best_valid_loss, best_valid_acc, _, _ = model.run_one_epoch(
         get_minibatch_iterator(valid_data, batch_size, is_training=False),
         training=False,
     )
@@ -58,6 +66,13 @@ def train(
         print(f" Train:  Loss {train_loss:.4f}, Acc {train_acc:.3f}, BLEU {train_bleu:.3f}, NIST {train_nist:.3f},")
         print(f"       NIST {train_nist:.3f}, DIST {train_dist:.3f}, ROUGE-2 {train_rouge2:.3f}, ROUGE-L {train_rougel:.3f}")
 
+        with train_summary_writer.as_default():
+          tf.summary.scalar('loss', train_loss, step=epoch)
+          tf.summary.scalar('accuracy', train_acc, step=epoch)
+          for metric_name, metric_score in zip(["bleu", "nist", "dist", "rouge2", "rougel"], 
+            [train_bleu, train_nist, train_dist, train_rouge2, train_rougel]):
+            tf.summary.scalar(metric_name, metric_score, step=epoch)
+
         valid_loss, valid_acc, valid_true, valid_pred = model.run_one_epoch(
             get_minibatch_iterator(valid_data, batch_size, is_training=False),
             training=False,
@@ -65,6 +80,13 @@ def train(
         valid_bleu, valid_nist, valid_dist, valid_rouge2, valid_rougel = calculate_metrics(valid_true, valid_pred)
         print(f" Valid:  Loss {valid_loss:.4f}, Acc {valid_acc:.3f}, BLEU {valid_bleu:.3f}")
         print(f"       NIST {valid_nist:.3f}, DIST {valid_dist:.3f}, ROUGE-2 {valid_rouge2:.3f}, ROUGE-L {valid_rougel:.3f}")
+
+        with valid_summary_writer.as_default():
+          tf.summary.scalar('loss', valid_loss, step=epoch)
+          tf.summary.scalar('accuracy', valid_acc, step=epoch)
+          for metric_name, metric_score in zip(["bleu", "nist", "dist", "rouge2", "rougel"], 
+            [valid_bleu, valid_nist, valid_dist, valid_rouge2, valid_rougel]):
+            tf.summary.scalar(metric_name, metric_score, step=epoch)
 
         # Save if good enough.
         if valid_acc >= best_valid_acc:
