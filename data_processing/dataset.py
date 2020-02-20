@@ -8,8 +8,8 @@ import collections
 from more_itertools import chunked
 from dpu_utils.mlutils.vocabulary import Vocabulary
 
-from data_processing.graph_pb2 import Graph
-from data_processing.graph_pb2 import FeatureNode, FeatureEdge
+from graph_pb2 import Graph
+from graph_pb2 import FeatureNode, FeatureEdge
 
 # import nltk
 # nltk.download('punkt')
@@ -45,7 +45,7 @@ def format_comment_to_plain_text(comment: str):
     comment = re.sub(r'{@\w+\s([^}]*)}', r'\1', comment)
     return comment.strip()
 
-
+  
 def load_data_file_methods(file_path: str):
     """
     Load a single data file, returning methods code and JavaDoc comments.
@@ -53,6 +53,7 @@ def load_data_file_methods(file_path: str):
 
     methods_code = []
     methods_comments = []
+    graphs = []
 
     g = Graph()
     with open(file_path, "rb") as f:
@@ -102,13 +103,81 @@ def load_data_file_methods(file_path: str):
 
         # I add only the non-empty methods that have comments.
         # I also ensure that method is not vrtual and has a body starting with '{'. 
-        if len(tokens) > 0 and len(comment) > 0 and 'lbrace' in tokens:
+        if len(tokens) > 0 and len(comment) > 0 and 'lbrace' in tokens and len(tokens) < 200:
            methods_code.append(tokens)
            methods_comments.append(comment)
-        #    print(tokens)
-        #    print(comment)
 
-    return methods_code, methods_comments
+           methods_edges, nodes_features = get_method_graph(m, nodes_dict, edges_dict)
+           
+           graph = {'Target': word_tokenize(comment),
+                    'graph': {'node_features': nodes_features,
+                              'adjacency_lists': methods_edges}}
+           if len(nodes_features) < 300:
+                graphs.append(graph)
+
+            # print(graph)
+
+    return methods_code, methods_comments, graphs
+
+
+def get_method_graph(m, nodes_dict, edges_dict):
+    method_nodes_ids = []    
+    get_method_nodes_rec(m.id, method_nodes_ids, edges_dict)
+    methods_edges = [[] for i in range(3)]
+
+    for node in method_nodes_ids:
+        if node in edges_dict:
+            for edge in edges_dict[node]:
+                if edge.destinationId in method_nodes_ids:
+                    if edge.type in [FeatureEdge.ASSOCIATED_TOKEN, FeatureEdge.NEXT_TOKEN, FeatureEdge.AST_CHILD]:
+                        methods_edges[edge.type-1].append([node, edge.destinationId])
+
+    method_nodes = {node_id: node for node_id, node in nodes_dict.items() if node_id in
+                    method_nodes_ids}
+
+    methods_edges, nodes_features = adjust_edges_ids(methods_edges, method_nodes)
+        
+    return methods_edges, nodes_features
+
+
+def adjust_edges_ids(edges, nodes):
+    old_id_to_new_id = {}
+    i = 0
+    nodes_values = sorted(nodes.values(), key=lambda node: node.id)
+    new_edges = [[] for edge_type in edges]
+    nodes_features = []
+
+    # Set new ids for tokens
+    for node_value in nodes_values:
+        if node_value.type == FeatureNode.TOKEN or node_value.type == FeatureNode.IDENTIFIER_TOKEN:
+            old_id_to_new_id[node_value.id] = i
+            nodes_features += [node_value.contents.lower()]
+            i += 1
+
+    # Set new ids for other nodes
+    for node_value in nodes_values:
+        if not (node_value.type == FeatureNode.TOKEN or node_value.type == FeatureNode.IDENTIFIER_TOKEN):
+            old_id_to_new_id[node_value.id] = i
+            nodes_features += [FeatureNode.NodeType.Name(node_value.type)]
+            i += 1
+
+    for i, edge_type in enumerate(edges):
+        for edge in edge_type:
+            new_edges[i].append((old_id_to_new_id[edge[0]], old_id_to_new_id[edge[1]]))
+
+    return new_edges, nodes_features
+
+
+def get_method_nodes_rec(node_id, method_nodes_ids, edges_dict):
+    """
+    Utilities to recursively retrieve all edges of a method graph.
+    """
+    method_nodes_ids.append(node_id)
+
+    if node_id in edges_dict:
+        for edge in edges_dict[node_id]:
+            if edge.type != FeatureEdge.NEXT_TOKEN and edge.destinationId not in method_nodes_ids:
+                get_method_nodes_rec(edge.destinationId, method_nodes_ids, edges_dict)
 
 
 def generate_dataset_from_dir(data_dir):
@@ -124,15 +193,22 @@ def generate_dataset_from_dir(data_dir):
     """
     methods_code = []
     methods_comments = []
+    graphs = []
 
     data_files = get_data_files_from_directory(data_dir)
 
+    i = 0
     for data_file in data_files:
-        file_methods_code, file_methods_comments = load_data_file_methods(data_file)
+        file_methods_code, file_methods_comments, file_graphs = load_data_file_methods(data_file)
         methods_code += file_methods_code
         methods_comments += file_methods_comments
+        graphs += file_graphs
 
-    return methods_code, methods_comments
+        if i%10 == 0:
+            print(f"Processed {i}/{len(data_files)} files, added {len(methods_code)} methods in total.")
+        i += 1
+
+    return methods_code, methods_comments, graphs
 
 
 def build_vocab(
