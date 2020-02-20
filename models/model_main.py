@@ -134,27 +134,30 @@ class LanguageModel(tf.keras.Model):
         num_graphs = tf.cast(batch_features["num_graphs_in_batch"], tf.float32)
         enc_hidden, enc_output = self.encoder(batch_features, training=training)
 
+        # print(enc_output)
+        # print(batch_features)
+        # print(enc_hidden)
         if self.hyperparameters["rnn_cell"] == "LSTM":
             dec_hidden = [enc_hidden, enc_hidden]
         else:
             dec_hidden = enc_hidden
         dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
 
-        # if training:
-        #   # Use teacher forcing
-        #   predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
-        #   return predictions
-        # else:
-        # The predicted ID is fed back into the model
-        for t in range(1, self.hyperparameters["max_seq_length"]):
-            predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
-            predicted_ids = tf.argmax(predictions[:,0,:], 1)
-            dec_input = tf.expand_dims(predicted_ids, 1)
-            new_logits = tf.expand_dims(predictions[:,0,:], 1)
-            if t==1:
-                results = new_logits
-            else:
-                results = tf.concat([results, new_logits], 1)
+        if training:
+            # Use teacher forcing
+            predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
+            return predictions
+        else:
+            # The predicted ID is fed back into the model
+            for t in range(1, self.hyperparameters["max_seq_length"]):
+                predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
+                predicted_ids = tf.argmax(predictions[:,0,:], 1)
+                dec_input = tf.expand_dims(predicted_ids, 1)
+                new_logits = tf.expand_dims(predictions[:,0,:], 1)
+                if t==1:
+                    results = new_logits
+                else:
+                    results = tf.concat([results, new_logits], 1)
 
         return results
 
@@ -241,7 +244,7 @@ class LanguageModel(tf.keras.Model):
             sources = batch_features
             targets = batch_labels
             with tf.GradientTape() as tape:
-                model_outputs = self.compute_logits(batch_features, targets, training=training)
+                model_outputs = self.compute_logits(batch_features, tf.cast(batch_labels["target_value"], tf.int32), training=training)
                 result = self.compute_loss_and_acc(model_outputs, batch_features, batch_labels)
 
             total_loss += result.token_ce_loss
