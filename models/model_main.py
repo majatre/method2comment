@@ -256,11 +256,12 @@ class LanguageModel(tf.keras.Model):
             hyp = [(x[:x.index("%END%")] if "%END%" in x else x) for x in predicted_texts]
             smoothing = SmoothingFunction().method4
             bleu_score = corpus_bleu(ref, hyp, smoothing_function=smoothing)
-            for r, h in zip(ref, hyp):
-                print('Target', ' '.join(r[0]))
-                print('Prediction', ' '.join(h))
-                print('\n')
-            print(bleu_score)
+            # for r, h in zip(ref, hyp):
+            #     print(
+            #         f"Target:         {' '.join(r[0])}\n"
+            #         f"Prediction:     {' '.join(h)}\n"
+            #     )
+            # print(bleu_score)
 
             ground_truth += ref
             predictions += hyp

@@ -9,7 +9,7 @@ import shutil
 # Generate data
 methods_code, methods_comments, graphs = generate_dataset_from_dir(
     "../corpus-features/")
-
+name = "single"
 
 random.shuffle(graphs)
 
@@ -21,10 +21,10 @@ subsets = {
 }
 
 for k, dataset in subsets.items():
-    with jsonlines.open('data/'+k+'_full.jsonl', mode='w') as writer:
+    with jsonlines.open('data/'+k+'_'+name+'.jsonl', mode='w') as writer:
         writer.write_all(dataset)
 
 for k in ['train', 'valid', 'test']:
-    with open('data/'+k+'_full.jsonl', 'rb') as f_in:
-        with gzip.open('jsonl_datasets/full/'+k+'.jsonl.gz', 'wb') as f_out:
+    with open('data/'+k+'_'+name+'.jsonl', 'rb') as f_in:
+        with gzip.open('jsonl_datasets/'+name+'/'+k+'.jsonl.gz', 'wb') as f_out:
             shutil.copyfileobj(f_in, f_out)

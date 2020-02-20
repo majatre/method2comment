@@ -27,20 +27,29 @@ class GraphWithTargetComment(GraphSample):
         type_to_node_to_num_incoming_edges: np.ndarray,
         node_features: List[np.ndarray],
         target_value: List[np.ndarray],
+        source_len: int,
     ):
         super().__init__(adjacency_lists, type_to_node_to_num_incoming_edges, node_features)
         self._target_value = target_value
+        self._source_len = source_len
 
     @property
-    def target_value(self) -> float:
+    def target_value(self) -> List[np.ndarray]:
         """Target value of the regression task."""
         return self._target_value
+
+    @property
+    def source_len(self):
+        """Number of token nodes in the source."""
+        return self._source_len
+
 
     def __str__(self):
         return (
             f"Adj:            {self._adjacency_lists}\n"
             f"Node_features:  {self._node_features}\n"
-            f"Target_value:   {self._target_value}"
+            f"Target_value:   {self._target_value}\n"
+            f"Source_len:     {self._source_len}"
         )
 
 
@@ -131,6 +140,7 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
             type_to_node_to_num_incoming_edges=type_to_num_incoming_edges,
             node_features=node_features,
             target_value=target_value,
+            source_len=datapoint["Source_len"]
         )
 
     def _build_vocab(
@@ -201,23 +211,26 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
     def _new_batch(self) -> Dict[str, Any]:
         new_batch = super()._new_batch()
         new_batch["target_value"] = []
+        new_batch["source_len"] = []
         return new_batch
 
     def _add_graph_to_batch(
         self, raw_batch: Dict[str, Any], graph_sample: GraphWithTargetComment
     ) -> None:
         super()._add_graph_to_batch(raw_batch, graph_sample)
-        raw_batch["target_value"].append(graph_sample.target_value)
+        raw_batch["target_value"].append(graph_sample.target_value)                
+        raw_batch["source_len"].append(graph_sample.source_len)
+
 
     def _finalise_batch(self, raw_batch) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         batch_features, batch_labels = super()._finalise_batch(raw_batch)
-        return batch_features, {"target_value": raw_batch["target_value"]}
+        return batch_features, {"target_value": raw_batch["target_value"], "source_len": raw_batch["source_len"]}
 
     def get_batch_tf_data_description(self) -> GraphBatchTFDataDescription:
         data_description = super().get_batch_tf_data_description()
         return GraphBatchTFDataDescription(
             batch_features_types=data_description.batch_features_types,
             batch_features_shapes=data_description.batch_features_shapes,
-            batch_labels_types={**data_description.batch_labels_types, "target_value": tf.int32},
-            batch_labels_shapes={**data_description.batch_labels_shapes, "target_value": (None, None)},
+            batch_labels_types={**data_description.batch_labels_types, "target_value": tf.int32, "source_len": tf.int32},
+            batch_labels_shapes={**data_description.batch_labels_shapes, "target_value": (None, None), "source_len": (None,)},
         )
