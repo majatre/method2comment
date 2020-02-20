@@ -132,3 +132,4 @@ dmypy.json
 trained_models
 data
 logs
+tf2_gnn

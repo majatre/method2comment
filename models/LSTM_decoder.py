@@ -23,9 +23,9 @@ class Decoder(tf.keras.Model):
     # Embed tokens
     embedded = self.embedding_layer(token_ids)
     # Attention
-    att_output = self.attention([embedded, enc_output])
+    # att_output = self.attention([embedded, enc_output])
     # Run RNN on embedded tokens
-    output, state_h, state_c = self.lstm(att_output, initial_state = hidden)
+    output, state_h, state_c = self.lstm(embedded, initial_state = hidden)
     # Project RNN outputs onto the vocabulary to obtain logits.
     rnn_output_logits = self.fc(output) 
 

@@ -17,7 +17,7 @@ class Decoder(tf.keras.Model):
     # Define fully connected layer to project RNN outputs onto the vocabulary to obtain logits.
     self.fc = tf.keras.layers.Dense(vocab_size)
 
-  def call(self, token_ids: tf.Tensor, hidden):
+  def call(self, token_ids: tf.Tensor, hidden,  enc_output):
     # Embed tokens
     embedded = self.embedding_layer(token_ids)
     # Run RNN on embedded tokens

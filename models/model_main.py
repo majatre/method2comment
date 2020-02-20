@@ -10,6 +10,7 @@ from models import GRU_encoder
 from models import GRU_decoder
 from models import LSTM_encoder
 from models import LSTM_decoder
+from models import GNN_encoder
 
 from nltk.translate.bleu_score import sentence_bleu, corpus_bleu
 from nltk.translate.bleu_score import SmoothingFunction
@@ -39,8 +40,8 @@ class LanguageModel(tf.keras.Model):
             "max_seq_length": 50,
             "batch_size": 200,
             "token_embedding_size": 64,
-            "encoder_rnn_hidden_dim": 64,
-            "decoder_rnn_hidden_dim": 64,
+            "encoder_rnn_hidden_dim": 128,
+            "decoder_rnn_hidden_dim": 128,
             "rnn_cell": "LSTM"  # One of "GRU", "LSTM"
         }
 
@@ -75,11 +76,11 @@ class LanguageModel(tf.keras.Model):
         super().__init__()
 
         if self.hyperparameters["rnn_cell"] == "GRU":
-            self.encoder = GRU_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
             self.decoder = GRU_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
         else: 
-            self.encoder = LSTM_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
             self.decoder = LSTM_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
+
+        self.encoder = GNN_encoder.GraphEncoder(GNN_encoder.GraphEncoder.get_default_hyperparameters(), len(self.vocab_source))
 
     @property
     def run_id(self):
@@ -99,27 +100,25 @@ class LanguageModel(tf.keras.Model):
         self.save_weights(path, save_format="tf")
 
     @classmethod
-    def restore(cls, saved_model_path: str) -> "LanguageModelTF2":
+    def restore(cls, saved_model_path: str, input_shape) -> "LanguageModelTF2":
         with open(saved_model_path, "rb") as fh:
             saved_data = pickle.load(fh)
 
         model = cls(saved_data["hyperparameters"], saved_data["vocab_source"], saved_data["vocab_target"])
-        model.build(tf.TensorShape([None, None, None]))
+        model.build(input_shape)
         model.load_weights(saved_model_path)
         return model
 
     def build(self, input_shape):
-        # A small hack necessary so that train.py is completely framework-agnostic:
-        input_shape = tf.TensorShape(input_shape)
-
-        super().build(input_shape)
+        self.encoder.build(input_shape)
+        super().build([])
 
     def call(self, data, training):
         inputs = data[0] 
         target_token_seq = data[1] 
         return self.compute_logits(inputs, target_token_seq, training)
 
-    def compute_logits(self, token_ids: tf.Tensor, target_token_seq: tf.Tensor, training: bool) -> tf.Tensor:
+    def compute_logits(self, batch_features: tf.Tensor, target_token_seq: tf.Tensor, training: bool) -> tf.Tensor:
         """
         Implements a language model, where each output is conditional on the current
         input and inputs processed so far.
@@ -132,32 +131,37 @@ class LanguageModel(tf.keras.Model):
             tf.float32 tensor of shape [B, T, V], storing the distribution over output symbols
             for each timestep for each batch element.
         """
-        enc_hidden = self.encoder.initialize_hidden_state()
-        enc_output, enc_hidden = self.encoder(token_ids, enc_hidden)
+        num_graphs = tf.cast(batch_features["num_graphs_in_batch"], tf.float32)
+        enc_hidden, enc_output = self.encoder(batch_features, training=training)
 
-        dec_hidden = enc_hidden
-        dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * self.hyperparameters["batch_size"], 1)
-
-        if training:
-          # Use teacher forcing
-          predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
-          return predictions
+        if self.hyperparameters["rnn_cell"] == "LSTM":
+            dec_hidden = [enc_hidden, enc_hidden]
         else:
-          # The predicted ID is fed back into the model
-          for t in range(1, self.hyperparameters["max_seq_length"]):
-              predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
-              predicted_ids = tf.argmax(predictions[:,0,:], 1)
-              dec_input = tf.expand_dims(predicted_ids, 1)
-              new_logits = tf.expand_dims(predictions[:,0,:], 1)
-              if t==1:
-                  results = new_logits
-              else:
-                  results = tf.concat([results, new_logits], 1)
+            dec_hidden = enc_hidden
+        dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
 
-          return results
+        # if training:
+        #   # Use teacher forcing
+        #   predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
+        #   return predictions
+        # else:
+        # The predicted ID is fed back into the model
+        for t in range(1, self.hyperparameters["max_seq_length"]):
+            predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
+            predicted_ids = tf.argmax(predictions[:,0,:], 1)
+            dec_input = tf.expand_dims(predicted_ids, 1)
+            new_logits = tf.expand_dims(predictions[:,0,:], 1)
+            if t==1:
+                results = new_logits
+            else:
+                results = tf.concat([results, new_logits], 1)
+
+        return results
 
     def compute_loss_and_acc(
-        self, rnn_output_logits: tf.Tensor, target_token_seq: tf.Tensor
+        self, rnn_output_logits: tf.Tensor, 
+        batch_features: Dict[str, tf.Tensor],
+        batch_labels: Dict[str, tf.Tensor],
     ) -> LanguageModelLoss:
         """
         Args:
@@ -185,10 +189,13 @@ class LanguageModel(tf.keras.Model):
 
         # Mask that contains True for the positions of valid tokens
         # and False for the positions of PAD 
+        target_token_seq = tf.cast(batch_labels["target_value"], tf.int32)
+        num_graphs = tf.cast(batch_features["num_graphs_in_batch"], tf.float32)
+
         mask = tf.math.not_equal(target_token_seq[:,1:], self.vocab_target.get_id_or_unk(self.vocab_target.get_pad()))
 
         num_tokens = tf.math.count_nonzero(mask)
-        prediction = tf.argmax(rnn_output_logits, 2) 
+        prediction = tf.cast(tf.argmax(rnn_output_logits, 2) , tf.int32)
         compared = tf.cast(tf.math.equal(target_token_seq[:,1:], prediction), tf.int32) * tf.cast(mask, tf.int32)
         num_correct_tokens = tf.math.count_nonzero(compared)
        
@@ -223,36 +230,37 @@ class LanguageModel(tf.keras.Model):
         return prediction.numpy()
 
     def run_one_epoch(
-        self, minibatches: Iterable[np.ndarray], training: bool = False,
+        self, dataset: tf.data.Dataset, training: bool = False,
     ):
         total_loss, num_samples, num_tokens, num_correct_tokens = 0.0, 0, 0, 0
         ground_truth = []
         predictions = []
-        for step, minibatch_data in enumerate(minibatches):
-            self.hyperparameters["batch_size"] = len(minibatch_data)
-            sources = np.array([x[0] for x in minibatch_data])
-            targets = np.array([x[1] for x in minibatch_data])
+
+        for step, (batch_features, batch_labels) in enumerate(dataset):
+            self.hyperparameters["batch_size"] = len(batch_labels)
+            sources = batch_features
+            targets = batch_labels
             with tf.GradientTape() as tape:
-                model_outputs = self.compute_logits(sources, targets, training=training)
-                result = self.compute_loss_and_acc(model_outputs, targets)
+                model_outputs = self.compute_logits(batch_features, targets, training=training)
+                result = self.compute_loss_and_acc(model_outputs, batch_features, batch_labels)
 
             total_loss += result.token_ce_loss
-            num_samples += sources.shape[0]
+            num_samples += tf.cast(batch_features["num_graphs_in_batch"], tf.float32)
             num_tokens += result.num_predictions
             num_correct_tokens += result.num_correct_token_predictions
 
-            target_texts = self.get_text_from_tensor(targets)
+            target_texts = self.get_text_from_tensor(batch_labels["target_value"])
             predicted_texts = self.get_text_from_tensor(tf.argmax(model_outputs,2))
 
             ref = [([x[1:x.index("%END%")] if "%END%" in x else x[1:]]) for x in target_texts]
             hyp = [(x[:x.index("%END%")] if "%END%" in x else x) for x in predicted_texts]
             smoothing = SmoothingFunction().method4
             bleu_score = corpus_bleu(ref, hyp, smoothing_function=smoothing)
-            # for r, h in zip(ref, hyp):
-            #     print('Target', ' '.join(r[0]))
-            #     print('Prediction', ' '.join(h))
-            #     print('\n')
-            # print(bleu_score)
+            for r, h in zip(ref, hyp):
+                print('Target', ' '.join(r[0]))
+                print('Prediction', ' '.join(h))
+                print('\n')
+            print(bleu_score)
 
             ground_truth += ref
             predictions += hyp
