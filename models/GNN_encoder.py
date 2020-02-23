@@ -25,6 +25,7 @@ class GraphEncoder(tf.keras.Model):
             "graph_aggregation_dropout_rate": 0.2,
             "token_embedding_size":  64,
             "gnn_message_calculation_class": "gnn_edge_mlp",
+            "gnn_hidden_dim": 64,
             "graph_encoding_size": 128,
         }
         params.update(these_hypers)

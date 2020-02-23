@@ -212,6 +212,7 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
         new_batch = super()._new_batch()
         new_batch["target_value"] = []
         new_batch["source_len"] = []
+        new_batch["graph_to_num_nodes"] = []
         return new_batch
 
     def _add_graph_to_batch(
@@ -220,17 +221,22 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
         super()._add_graph_to_batch(raw_batch, graph_sample)
         raw_batch["target_value"].append(graph_sample.target_value)                
         raw_batch["source_len"].append(graph_sample.source_len)
+        raw_batch["graph_to_num_nodes"].append(len(graph_sample.node_features))
 
 
     def _finalise_batch(self, raw_batch) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         batch_features, batch_labels = super()._finalise_batch(raw_batch)
-        return batch_features, {"target_value": raw_batch["target_value"], "source_len": raw_batch["source_len"]}
+        return {**batch_features, 
+            "source_len": raw_batch["source_len"], 
+            "graph_to_num_nodes": np.array(raw_batch["graph_to_num_nodes"])
+            }, {"target_value": raw_batch["target_value"]}
+                               
 
     def get_batch_tf_data_description(self) -> GraphBatchTFDataDescription:
         data_description = super().get_batch_tf_data_description()
         return GraphBatchTFDataDescription(
-            batch_features_types=data_description.batch_features_types,
-            batch_features_shapes=data_description.batch_features_shapes,
-            batch_labels_types={**data_description.batch_labels_types, "target_value": tf.int32, "source_len": tf.int32},
-            batch_labels_shapes={**data_description.batch_labels_shapes, "target_value": (None, None), "source_len": (None,)},
+            batch_features_types={**data_description.batch_features_types, "source_len": tf.int32, "graph_to_num_nodes": tf.int32},
+            batch_features_shapes={**data_description.batch_features_shapes, "source_len": (None,), "graph_to_num_nodes": (None,)},
+            batch_labels_types={**data_description.batch_labels_types, "target_value": tf.int32},
+            batch_labels_shapes={**data_description.batch_labels_shapes, "target_value": (None, None)},
         )

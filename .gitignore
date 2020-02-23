@@ -130,6 +130,8 @@ dmypy.json
 
 # Trained models
 trained_models
+
+jsonl_datasets
 data
 logs
 tf2_gnn

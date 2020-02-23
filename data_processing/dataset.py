@@ -205,9 +205,6 @@ def generate_dataset_from_dir(data_dir):
         methods_comments += file_methods_comments
         graphs += file_graphs
 
-        if len(methods_code) >= 1:
-            return [methods_code[0]]*200, [methods_comments[0]]*200, [graphs[0]]*200
-
         if i%10 == 0:
             print(f"Processed {i}/{len(data_files)} files, added {len(methods_code)} methods in total.")
         i += 1

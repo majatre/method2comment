@@ -38,6 +38,7 @@ class LanguageModel(tf.keras.Model):
             "patience": 10,
             "max_vocab_size": 10000,
             "max_seq_length": 50,
+            "max_node_num": 400,
             "batch_size": 200,
             "token_embedding_size": 64,
             "encoder_rnn_hidden_dim": 128,
@@ -81,6 +82,7 @@ class LanguageModel(tf.keras.Model):
             self.decoder = LSTM_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
 
         self.encoder = GNN_encoder.GraphEncoder(GNN_encoder.GraphEncoder.get_default_hyperparameters(), len(self.vocab_source))
+
 
     @property
     def run_id(self):
@@ -133,8 +135,18 @@ class LanguageModel(tf.keras.Model):
         """
         num_graphs = tf.cast(batch_features["num_graphs_in_batch"], tf.float32)
         enc_hidden, enc_output = self.encoder(batch_features, training=training)
+        
+        enc_output = tf.split(enc_output, batch_features["graph_to_num_nodes"])
+        enc_output = [
+            tf.concat([out, 
+            tf.zeros([self.hyperparameters["max_node_num"] - out.shape[0], self.hyperparameters["token_embedding_size"]])
+            ], 0) for out in enc_output]
 
-        # print(enc_output)
+        # print(len(enc_output))
+        # print(enc_output[0].shape)
+        # print(enc_output[1].shape)
+        enc_output = tf.stack(enc_output)
+        # print(graph_reprs)
         # print(batch_features)
         # print(enc_hidden)
         if self.hyperparameters["rnn_cell"] == "LSTM":
