@@ -8,8 +8,8 @@ import shutil
 
 # Generate data
 methods_code, methods_comments, graphs = generate_dataset_from_dir(
-    "../corpus-features/libgdx")
-name = "libgdx"
+    "../corpus-features/")
+name = "all"
 
 random.shuffle(graphs)
 

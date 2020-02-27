@@ -15,17 +15,14 @@ class GraphEncoder(tf.keras.Model):
         """Get the default hyperparameter dictionary for the class."""
         params = {f"gnn_{name}": value for name, value in GNN.get_default_hyperparameters(mp_style).items()}
         these_hypers: Dict[str, Any] = {
-            "optimizer": "Adam",  # One of "SGD", "RMSProp", "Adam"
-            "learning_rate": 0.001,
-            "learning_rate_decay": 0.98,
-            "momentum": 0.85,
-            "gradient_clip_value": 1.0,
             "graph_aggregation_num_heads": 16,
             "graph_aggregation_hidden_layers": [128],
             "graph_aggregation_dropout_rate": 0.2,
             "token_embedding_size":  64,
             "gnn_message_calculation_class": "gnn_edge_mlp",
             "gnn_hidden_dim": 64,
+            "gnn_global_exchange_mode": "mlp",
+            "gnn_num_layers": 4,
             "graph_encoding_size": 128,
         }
         params.update(these_hypers)
@@ -76,10 +73,10 @@ class GraphEncoder(tf.keras.Model):
               )
           )
 
-          self._graph_repr_to_classification_layer = tf.keras.layers.Dense(
-              self._params["graph_encoding_size"], activation=tf.nn.sigmoid, use_bias=True
+          self._graph_repr_layer = tf.keras.layers.Dense(
+              self._params["graph_encoding_size"], use_bias=True
           )
-          self._graph_repr_to_classification_layer.build(
+          self._graph_repr_layer.build(
               tf.TensorShape((None, self._params["graph_aggregation_num_heads"]))
           )
         super().build([])
@@ -105,9 +102,9 @@ class GraphEncoder(tf.keras.Model):
           num_graphs=batch_features["num_graphs_in_batch"],
         )
       )  # Shape [G, graph_aggregation_num_heads]
-      per_graph_results = self._graph_repr_to_classification_layer(
+      per_graph_results = self._graph_repr_layer(
           per_graph_results
-      )  # Shape [G, 64]
+      )  # Shape [G, graph_encoding_size]
 
       return per_graph_results
 

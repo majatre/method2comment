@@ -28,10 +28,12 @@ class GraphWithTargetComment(GraphSample):
         node_features: List[np.ndarray],
         target_value: List[np.ndarray],
         source_len: int,
+        source_seq: List[np.ndarray],
     ):
         super().__init__(adjacency_lists, type_to_node_to_num_incoming_edges, node_features)
         self._target_value = target_value
         self._source_len = source_len
+        self._source_seq = source_seq
 
     @property
     def target_value(self) -> List[np.ndarray]:
@@ -43,13 +45,19 @@ class GraphWithTargetComment(GraphSample):
         """Number of token nodes in the source."""
         return self._source_len
 
+    @property
+    def source_seq(self):
+        """Token nodes in the source."""
+        return self._source_seq
+
 
     def __str__(self):
         return (
             f"Adj:            {self._adjacency_lists}\n"
             f"Node_features:  {self._node_features}\n"
             f"Target_value:   {self._target_value}\n"
-            f"Source_len:     {self._source_len}"
+            f"Source_len:     {self._source_len}\n"
+            f"Source_seq:     {self._source_len}"
         )
 
 
@@ -72,6 +80,7 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
     def get_default_hyperparameters(cls) -> Dict[str, Any]:
         super_hypers = super().get_default_hyperparameters()
         this_hypers = {
+            "num_fwd_edge_types": 16,
             "max_vocab_size": 10000,
             "max_seq_length": 50,
         }
@@ -127,6 +136,7 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
 
     def _process_raw_datapoint(self, datapoint: Dict[str, Any]) -> GraphWithTargetComment:
         node_features = self._tensorise_node_features(self.vocab_source, datapoint["graph"]["node_features"])
+        source_seq = self._tensorise_target_token_sequence(self.vocab_source, self.max_seq_length, datapoint["graph"]["node_features"][:datapoint["Source_len"]])
 
         type_to_adj_list, type_to_num_incoming_edges = self._process_raw_adjacency_lists(
             raw_adjacency_lists=datapoint["graph"]["adjacency_lists"],
@@ -140,7 +150,8 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
             type_to_node_to_num_incoming_edges=type_to_num_incoming_edges,
             node_features=node_features,
             target_value=target_value,
-            source_len=datapoint["Source_len"]
+            source_len=datapoint["Source_len"] if "Source_len" in datapoint else 0,
+            source_seq=source_seq
         )
 
     def _build_vocab(
@@ -213,6 +224,7 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
         new_batch["target_value"] = []
         new_batch["source_len"] = []
         new_batch["graph_to_num_nodes"] = []
+        new_batch["source_seq"] = []
         return new_batch
 
     def _add_graph_to_batch(
@@ -222,12 +234,14 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
         raw_batch["target_value"].append(graph_sample.target_value)                
         raw_batch["source_len"].append(graph_sample.source_len)
         raw_batch["graph_to_num_nodes"].append(len(graph_sample.node_features))
+        raw_batch["source_seq"].append(graph_sample.source_seq)
 
 
     def _finalise_batch(self, raw_batch) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         batch_features, batch_labels = super()._finalise_batch(raw_batch)
         return {**batch_features, 
             "source_len": raw_batch["source_len"], 
+            "source_seq": raw_batch["source_seq"],
             "graph_to_num_nodes": np.array(raw_batch["graph_to_num_nodes"])
             }, {"target_value": raw_batch["target_value"]}
                                
@@ -235,8 +249,8 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
     def get_batch_tf_data_description(self) -> GraphBatchTFDataDescription:
         data_description = super().get_batch_tf_data_description()
         return GraphBatchTFDataDescription(
-            batch_features_types={**data_description.batch_features_types, "source_len": tf.int32, "graph_to_num_nodes": tf.int32},
-            batch_features_shapes={**data_description.batch_features_shapes, "source_len": (None,), "graph_to_num_nodes": (None,)},
+            batch_features_types={**data_description.batch_features_types, "source_len": tf.int32, "source_seq": tf.int32,  "graph_to_num_nodes": tf.int32},
+            batch_features_shapes={**data_description.batch_features_shapes, "source_len": (None,), "source_seq": (None,50), "graph_to_num_nodes": (None,)},
             batch_labels_types={**data_description.batch_labels_types, "target_value": tf.int32},
             batch_labels_shapes={**data_description.batch_labels_shapes, "target_value": (None, None)},
         )

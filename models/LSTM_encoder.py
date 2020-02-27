@@ -16,6 +16,6 @@ class Encoder(tf.keras.Model):
     output, state_h, state_c = self.lstm(latent, initial_state = hidden)
     return output, [state_h, state_c]
 
-  def initialize_hidden_state(self):
-    return [tf.zeros((self.hyperparameters["batch_size"], self.hyperparameters["encoder_rnn_hidden_dim"])),
-            tf.zeros((self.hyperparameters["batch_size"], self.hyperparameters["encoder_rnn_hidden_dim"]))]
+  def initialize_hidden_state(self, batch_size):
+    return [tf.zeros((batch_size, self.hyperparameters["encoder_rnn_hidden_dim"])),
+            tf.zeros((batch_size, self.hyperparameters["encoder_rnn_hidden_dim"]))]

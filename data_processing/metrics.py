@@ -25,5 +25,8 @@ def calculate_metrics(ref, hyp):
     rouge = Rouge()
     hyp_joined = [' '.join([str(x) for x in h]) for h in hyp]
     ref_joined = [' '.join([str(x) for x in r[0]]) for r in ref]
-    scores = rouge.get_scores(hyp_joined, ref_joined, avg=True)
-    return bleu, nist, dist, scores['rouge-2']['f'], scores['rouge-l']['f']
+    try:
+        scores = rouge.get_scores(hyp_joined, ref_joined, avg=True)
+        return bleu, nist, dist, scores['rouge-2']['f'], scores['rouge-l']['f']
+    except:
+        return bleu, nist, dist, 0.0, 0.0

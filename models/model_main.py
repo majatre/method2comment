@@ -30,7 +30,7 @@ class LanguageModel(tf.keras.Model):
     def get_default_hyperparameters(cls) -> Dict[str, Any]:
         return {
             "optimizer": "Adam",  # One of "SGD", "RMSProp", "Adam"
-            "learning_rate": 0.01,
+            "learning_rate": 0.001,
             "learning_rate_decay": 0.98,
             "momentum": 0.85,
             "gradient_clip_value": 1,
@@ -41,9 +41,10 @@ class LanguageModel(tf.keras.Model):
             "max_node_num": 400,
             "batch_size": 200,
             "token_embedding_size": 64,
-            "encoder_rnn_hidden_dim": 128,
-            "decoder_rnn_hidden_dim": 128,
-            "rnn_cell": "LSTM"  # One of "GRU", "LSTM"
+            "encoder_rnn_hidden_dim": 64,
+            "decoder_rnn_hidden_dim": 64,
+            "rnn_cell": "LSTM",  # One of "GRU", "LSTM"
+            "encoder_type": "graph"  # One of "seq", "graph"
         }
 
     def __init__(self, hyperparameters: Dict[str, Any], vocab_source: Vocabulary, vocab_target: Vocabulary) -> None:
@@ -77,11 +78,16 @@ class LanguageModel(tf.keras.Model):
         super().__init__()
 
         if self.hyperparameters["rnn_cell"] == "GRU":
+            self.seq_encoder = GRU_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
             self.decoder = GRU_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
         else: 
+            self.seq_encoder = LSTM_encoder.Encoder(len(self.vocab_source), self.hyperparameters)
             self.decoder = LSTM_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
 
-        self.encoder = GNN_encoder.GraphEncoder(GNN_encoder.GraphEncoder.get_default_hyperparameters(), len(self.vocab_source))
+        self.graph_encoder = GNN_encoder.GraphEncoder(GNN_encoder.GraphEncoder.get_default_hyperparameters(), len(self.vocab_source))
+        
+        self.linear_h = tf.keras.layers.Dense(self.hyperparameters["decoder_rnn_hidden_dim"])
+        self.linear_c = tf.keras.layers.Dense(self.hyperparameters["decoder_rnn_hidden_dim"])
 
 
     @property
@@ -112,7 +118,7 @@ class LanguageModel(tf.keras.Model):
         return model
 
     def build(self, input_shape):
-        self.encoder.build(input_shape)
+        self.graph_encoder.build(input_shape)
         super().build([])
 
     def call(self, data, training):
@@ -134,42 +140,53 @@ class LanguageModel(tf.keras.Model):
             for each timestep for each batch element.
         """
         num_graphs = tf.cast(batch_features["num_graphs_in_batch"], tf.float32)
-        enc_hidden, enc_output = self.encoder(batch_features, training=training)
-        
-        enc_output = tf.split(enc_output, batch_features["graph_to_num_nodes"])
-        enc_output = [
-            tf.concat([out, 
-            tf.zeros([self.hyperparameters["max_node_num"] - out.shape[0], self.hyperparameters["token_embedding_size"]])
-            ], 0) for out in enc_output]
 
-        # print(len(enc_output))
-        # print(enc_output[0].shape)
-        # print(enc_output[1].shape)
-        enc_output = tf.stack(enc_output)
-        # print(graph_reprs)
-        # print(batch_features)
-        # print(enc_hidden)
-        if self.hyperparameters["rnn_cell"] == "LSTM":
-            dec_hidden = [enc_hidden, enc_hidden]
-        else:
+        if self.hyperparameters["encoder_type"] == "seq":
+            enc_hidden = self.seq_encoder.initialize_hidden_state(batch_features["num_graphs_in_batch"])
+            seq_enc_output, enc_hidden = self.seq_encoder(batch_features["source_seq"], enc_hidden)
+
             dec_hidden = enc_hidden
-        dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
+            dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * batch_features["num_graphs_in_batch"], 1)
 
-        if training:
-            # Use teacher forcing
-            predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
-            return predictions
-        else:
-            # The predicted ID is fed back into the model
-            for t in range(1, self.hyperparameters["max_seq_length"]):
-                predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
-                predicted_ids = tf.argmax(predictions[:,0,:], 1)
+        elif self.hyperparameters["encoder_type"] == "graph":
+            enc_hidden, enc_output = self.graph_encoder(batch_features, training=training)
+            
+            enc_output = tf.split(enc_output, batch_features["graph_to_num_nodes"])
+            enc_output = [
+                tf.concat([out, 
+                tf.zeros([self.hyperparameters["max_node_num"] - out.shape[0], self.hyperparameters["token_embedding_size"]])
+                ], 0) for out in enc_output]
+            enc_output = tf.stack(enc_output)
+
+            dec_hidden_h = self.linear_h(enc_hidden)
+            dec_hidden_c = self.linear_c(enc_hidden)
+
+            if self.hyperparameters["rnn_cell"] == "LSTM":
+                dec_hidden = [dec_hidden_h, dec_hidden_c]
+            else:
+                dec_hidden = dec_hidden_h
+            dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * hidden.shape[0], 1)
+
+        # if training:
+        #     # Use teacher forcing
+        #     predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
+        #     return predictions
+        # else:
+        #     # The predicted ID is fed back into the model
+        for t in range(1, self.hyperparameters["max_seq_length"]):
+            predictions, dec_hidden = self.decoder(dec_input, dec_hidden, seq_enc_output)
+            predicted_ids = tf.argmax(predictions[:,0,:], 1)
+            if training:
+                # Using teacher forcing
+                dec_input = tf.expand_dims(target_token_seq[:, t], 1)
+            else:
+                # The predicted ID is fed back into the model
                 dec_input = tf.expand_dims(predicted_ids, 1)
-                new_logits = tf.expand_dims(predictions[:,0,:], 1)
-                if t==1:
-                    results = new_logits
-                else:
-                    results = tf.concat([results, new_logits], 1)
+            new_logits = tf.expand_dims(predictions[:,0,:], 1)
+            if t==1:
+                results = new_logits
+            else:
+                results = tf.concat([results, new_logits], 1)
 
         return results
 

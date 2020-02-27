@@ -11,7 +11,6 @@ Options:
 from docopt import docopt
 from dpu_utils.utils import run_and_debug, RichPath
 
-from data_processing.dataset import prepare_data, get_minibatch_iterator
 from models.model_main import LanguageModel
 from data_processing.metrics import calculate_metrics 
 from data_processing.method2comment_dataset import JsonLMethod2CommentDataset
@@ -32,7 +31,7 @@ def run(arguments) -> None:
 
     dataset.load_vocab(model.vocab_source, model.vocab_target)
     data_path = RichPath.create(
-        os.path.join(os.path.dirname(__file__), ".", "libgdx_dataset")
+        os.path.join(os.path.dirname(__file__), ".", "jsonl_datasets/libgdx")
     )
     dataset.load_data(data_path, folds_to_load=[DataFold.TEST])
     test_data = dataset.get_tensorflow_dataset(DataFold.TEST)
