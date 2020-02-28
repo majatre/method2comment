@@ -33,8 +33,8 @@ def run(arguments) -> None:
     data_path = RichPath.create(
         os.path.join(os.path.dirname(__file__), ".", "jsonl_datasets/libgdx")
     )
-    dataset.load_data(data_path, folds_to_load=[DataFold.TEST])
-    test_data = dataset.get_tensorflow_dataset(DataFold.TEST)
+    dataset.load_data(data_path, folds_to_load=[DataFold.VALIDATION])
+    test_data = dataset.get_tensorflow_dataset(DataFold.VALIDATION)
 
     print(
         f"  Loaded {len(list(test_data))} testing samples."

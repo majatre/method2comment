@@ -15,6 +15,7 @@ class GraphEncoder(tf.keras.Model):
         """Get the default hyperparameter dictionary for the class."""
         params = {f"gnn_{name}": value for name, value in GNN.get_default_hyperparameters(mp_style).items()}
         these_hypers: Dict[str, Any] = {
+            "graph_aggregation_size": 128,
             "graph_aggregation_num_heads": 16,
             "graph_aggregation_hidden_layers": [128],
             "graph_aggregation_dropout_rate": 0.2,
@@ -22,7 +23,7 @@ class GraphEncoder(tf.keras.Model):
             "gnn_message_calculation_class": "gnn_edge_mlp",
             "gnn_hidden_dim": 64,
             "gnn_global_exchange_mode": "mlp",
-            "gnn_num_layers": 4,
+            "gnn_num_layers": 8,
             "graph_encoding_size": 128,
         }
         params.update(these_hypers)
@@ -56,7 +57,7 @@ class GraphEncoder(tf.keras.Model):
 
         with tf.name_scope(self._name):
           self._node_to_graph_repr_layer = WeightedSumGraphRepresentation(
-              graph_representation_size=self._params["graph_aggregation_num_heads"],
+              graph_representation_size=self._params["graph_aggregation_size"],
               num_heads=self._params["graph_aggregation_num_heads"],
               scoring_mlp_layers=self._params["graph_aggregation_hidden_layers"],
               scoring_mlp_dropout_rate=self._params["graph_aggregation_dropout_rate"],
@@ -77,7 +78,7 @@ class GraphEncoder(tf.keras.Model):
               self._params["graph_encoding_size"], use_bias=True
           )
           self._graph_repr_layer.build(
-              tf.TensorShape((None, self._params["graph_aggregation_num_heads"]))
+              tf.TensorShape((None, self._params["graph_aggregation_size"]))
           )
         super().build([])
 

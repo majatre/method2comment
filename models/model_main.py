@@ -143,7 +143,7 @@ class LanguageModel(tf.keras.Model):
 
         if self.hyperparameters["encoder_type"] == "seq":
             enc_hidden = self.seq_encoder.initialize_hidden_state(batch_features["num_graphs_in_batch"])
-            seq_enc_output, enc_hidden = self.seq_encoder(batch_features["source_seq"], enc_hidden)
+            enc_output, enc_hidden = self.seq_encoder(batch_features["source_seq"], enc_hidden)
 
             dec_hidden = enc_hidden
             dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * batch_features["num_graphs_in_batch"], 1)
@@ -165,7 +165,7 @@ class LanguageModel(tf.keras.Model):
                 dec_hidden = [dec_hidden_h, dec_hidden_c]
             else:
                 dec_hidden = dec_hidden_h
-            dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * hidden.shape[0], 1)
+            dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
 
         # if training:
         #     # Use teacher forcing
@@ -174,7 +174,7 @@ class LanguageModel(tf.keras.Model):
         # else:
         #     # The predicted ID is fed back into the model
         for t in range(1, self.hyperparameters["max_seq_length"]):
-            predictions, dec_hidden = self.decoder(dec_input, dec_hidden, seq_enc_output)
+            predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
             predicted_ids = tf.argmax(predictions[:,0,:], 1)
             if training:
                 # Using teacher forcing
@@ -245,6 +245,12 @@ class LanguageModel(tf.keras.Model):
             texts.append([self.vocab_target.get_name_for_id(t) for t in token_seq])
         return texts
 
+    def get_source_from_tensor(self, indices: tf.Tensor):
+        texts = []
+        for token_seq in indices:
+            texts.append([self.vocab_source.get_name_for_id(t) for t in token_seq])
+        return texts
+
     def predict_single_comment(self, token_seq: List[int]):
         self.hyperparameters["batch_size"] = 1
         output_logits = self.compute_logits(
@@ -283,15 +289,18 @@ class LanguageModel(tf.keras.Model):
 
             target_texts = self.get_text_from_tensor(batch_labels["target_value"])
             predicted_texts = self.get_text_from_tensor(tf.argmax(model_outputs,2))
+            # source_text = self.get_source_from_tensor(batch_features["source_seq"])
+
 
             ref = [([x[1:x.index("%END%")] if "%END%" in x else x[1:]]) for x in target_texts]
             hyp = [(x[:x.index("%END%")] if "%END%" in x else x) for x in predicted_texts]
             smoothing = SmoothingFunction().method4
             bleu_score = corpus_bleu(ref, hyp, smoothing_function=smoothing)
-            # for r, h in zip(ref, hyp):
+            # for r, h, s in zip(ref, hyp, source_text):
             #     print(
             #         f"Target:         {' '.join(r[0])}\n"
             #         f"Prediction:     {' '.join(h)}\n"
+            #         f"Source:         {' '.join(s)}\n"
             #     )
             # print(bleu_score)
 
