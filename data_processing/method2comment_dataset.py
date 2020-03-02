@@ -80,7 +80,7 @@ class JsonLMethod2CommentDataset(JsonLGraphDataset[GraphWithTargetComment]):
     def get_default_hyperparameters(cls) -> Dict[str, Any]:
         super_hypers = super().get_default_hyperparameters()
         this_hypers = {
-            "num_fwd_edge_types": 16,
+            "num_fwd_edge_types": 3,
             "max_vocab_size": 10000,
             "max_seq_length": 50,
         }

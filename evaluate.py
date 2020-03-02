@@ -19,6 +19,9 @@ from tf2_gnn.data import DataFold, GraphDataset
 import pickle
 import os
 
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"  # specify which GPU(s) to be used
+
 
 def run(arguments) -> None:
     print("Loading data ...")
@@ -31,7 +34,7 @@ def run(arguments) -> None:
 
     dataset.load_vocab(model.vocab_source, model.vocab_target)
     data_path = RichPath.create(
-        os.path.join(os.path.dirname(__file__), ".", "jsonl_datasets/libgdx")
+        os.path.join(os.path.dirname(__file__), ".", "jsonl_datasets/" + args['TEST_DATA_DIR'])
     )
     dataset.load_data(data_path, folds_to_load=[DataFold.VALIDATION])
     test_data = dataset.get_tensorflow_dataset(DataFold.VALIDATION)

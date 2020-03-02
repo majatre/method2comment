@@ -11,8 +11,11 @@ class Encoder(tf.keras.Model):
                                    return_state=True,
                                    recurrent_initializer='glorot_uniform')
 
-  def call(self, token_ids, hidden):
-    latent = self.embedding(token_ids)
+  def call(self, token_ids, hidden, embedd = True):
+    if embedd:
+      latent = self.embedding(token_ids)
+    else:
+      latent = token_ids
     output, state_h, state_c = self.lstm(latent, initial_state = hidden)
     return output, [state_h, state_c]
 

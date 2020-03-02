@@ -44,7 +44,7 @@ class LanguageModel(tf.keras.Model):
             "encoder_rnn_hidden_dim": 64,
             "decoder_rnn_hidden_dim": 64,
             "rnn_cell": "LSTM",  # One of "GRU", "LSTM"
-            "encoder_type": "graph"  # One of "seq", "graph"
+            "encoder_type": "graph+seq"  # One of "seq", "graph", "graph+seq"
         }
 
     def __init__(self, hyperparameters: Dict[str, Any], vocab_source: Vocabulary, vocab_target: Vocabulary) -> None:
@@ -165,6 +165,28 @@ class LanguageModel(tf.keras.Model):
                 dec_hidden = [dec_hidden_h, dec_hidden_c]
             else:
                 dec_hidden = dec_hidden_h
+            dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
+
+        elif self.hyperparameters["encoder_type"] == "graph+seq":
+            enc_hidden, enc_output = self.graph_encoder(batch_features, training=training)
+            
+            enc_output = tf.split(enc_output, batch_features["graph_to_num_nodes"])
+            enc_output = [
+                tf.concat([out[:sorce_len, :], 
+                tf.zeros([200 - out[:sorce_len, :].shape[0], self.hyperparameters["token_embedding_size"]])
+                ], 0) for out, sorce_len in zip(enc_output, batch_features["source_len"])]
+            enc_output = tf.stack(enc_output)
+
+            hidden_h = self.linear_h(enc_hidden)
+            hidden_c = self.linear_c(enc_hidden)
+
+            if self.hyperparameters["rnn_cell"] == "LSTM":
+                hidden = [hidden_h, hidden_c]
+            else:
+                hidden = hidden_h
+
+            enc_output, dec_hidden = self.seq_encoder(enc_output, hidden, embedd = False)
+
             dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
 
         # if training:
@@ -295,7 +317,10 @@ class LanguageModel(tf.keras.Model):
             ref = [([x[1:x.index("%END%")] if "%END%" in x else x[1:]]) for x in target_texts]
             hyp = [(x[:x.index("%END%")] if "%END%" in x else x) for x in predicted_texts]
             smoothing = SmoothingFunction().method4
-            bleu_score = corpus_bleu(ref, hyp, smoothing_function=smoothing)
+            try:
+                bleu_score = corpus_bleu(ref, hyp, smoothing_function=smoothing)
+            except:
+                bleu_score = 0
             # for r, h, s in zip(ref, hyp, source_text):
             #     print(
             #         f"Target:         {' '.join(r[0])}\n"

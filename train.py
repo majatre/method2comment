@@ -32,6 +32,11 @@ from tf2_gnn.data import DataFold #, JsonLMethod2CommentDataset
 
 import pickle
 
+
+import os
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"  # specify which GPU(s) to be used
+
 def jsonl_dataset(dataset_name: str):
     dataset_params = JsonLMethod2CommentDataset.get_default_hyperparameters()
     dataset = JsonLMethod2CommentDataset(dataset_params)
@@ -185,5 +190,6 @@ def make_run_id(arguments: Dict[str, Any]) -> str:
 
 
 if __name__ == "__main__":
+    
     args = docopt(__doc__)
     run_and_debug(lambda: run(args), args["--debug"])

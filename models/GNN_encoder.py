@@ -15,7 +15,7 @@ class GraphEncoder(tf.keras.Model):
         """Get the default hyperparameter dictionary for the class."""
         params = {f"gnn_{name}": value for name, value in GNN.get_default_hyperparameters(mp_style).items()}
         these_hypers: Dict[str, Any] = {
-            "graph_aggregation_size": 128,
+            "graph_aggregation_size": 256,
             "graph_aggregation_num_heads": 16,
             "graph_aggregation_hidden_layers": [128],
             "graph_aggregation_dropout_rate": 0.2,
