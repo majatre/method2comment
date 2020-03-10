@@ -7,8 +7,12 @@ from nltk.metrics.distance import edit_distance
 
 def calculate_metrics(ref, hyp):
     smoothing = SmoothingFunction().method4
-    bleu = corpus_bleu(ref, hyp, smoothing_function=smoothing)
-    nist = corpus_nist(ref, hyp, n=4)
+    try:
+        bleu = corpus_bleu(ref, hyp, smoothing_function=smoothing)
+        nist = corpus_nist(ref, hyp, n=4)
+    except:
+        bleu = 0
+        nist = 0
 
     # Calculate dist
     total_len = 0.0

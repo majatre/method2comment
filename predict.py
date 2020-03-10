@@ -3,7 +3,7 @@
 Usage:
     predict.py [options] TRAINED_MODEL TOKENS...
 
-Uses trained model to continue the sequence of tokens provided.
+Uses trained model to predict comment given a sequence of tokens.
 
 Options:
     -h --help        Show this screen.

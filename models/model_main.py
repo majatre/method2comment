@@ -1,6 +1,7 @@
 import os
 import pickle
 from typing import Dict, Any, NamedTuple, Iterable, List
+import random
 
 import numpy as np
 import tensorflow.compat.v2 as tf
@@ -44,7 +45,7 @@ class LanguageModel(tf.keras.Model):
             "encoder_rnn_hidden_dim": 64,
             "decoder_rnn_hidden_dim": 64,
             "rnn_cell": "LSTM",  # One of "GRU", "LSTM"
-            "encoder_type": "graph+seq"  # One of "seq", "graph", "graph+seq"
+            "encoder_type": "graph"  # One of "seq", "graph", "graph+seq", "seq+graph"
         }
 
     def __init__(self, hyperparameters: Dict[str, Any], vocab_source: Vocabulary, vocab_target: Vocabulary) -> None:
@@ -85,7 +86,7 @@ class LanguageModel(tf.keras.Model):
             self.decoder = LSTM_decoder.Decoder(len(self.vocab_target), self.hyperparameters)
 
         self.graph_encoder = GNN_encoder.GraphEncoder(GNN_encoder.GraphEncoder.get_default_hyperparameters(), len(self.vocab_source))
-        
+
         self.linear_h = tf.keras.layers.Dense(self.hyperparameters["decoder_rnn_hidden_dim"])
         self.linear_c = tf.keras.layers.Dense(self.hyperparameters["decoder_rnn_hidden_dim"])
 
@@ -119,6 +120,7 @@ class LanguageModel(tf.keras.Model):
 
     def build(self, input_shape):
         self.graph_encoder.build(input_shape)
+
         super().build([])
 
     def call(self, data, training):
@@ -189,26 +191,43 @@ class LanguageModel(tf.keras.Model):
 
             dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
 
-        # if training:
-        #     # Use teacher forcing
-        #     predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
-        #     return predictions
-        # else:
-        #     # The predicted ID is fed back into the model
-        for t in range(1, self.hyperparameters["max_seq_length"]):
-            predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
-            predicted_ids = tf.argmax(predictions[:,0,:], 1)
-            if training:
-                # Using teacher forcing
-                dec_input = tf.expand_dims(target_token_seq[:, t], 1)
+        elif self.hyperparameters["encoder_type"] == "seq+graph":
+            enc_hidden = self.seq_encoder.initialize_hidden_state(batch_features["num_graphs_in_batch"])
+            seq_enc_output, seq_enc_hidden = self.seq_encoder(batch_features["source_seq"], enc_hidden)
+            
+            enc_hidden, enc_output = self.graph_encoder(batch_features, training=training, seq_enc_output=seq_enc_output)
+
+            enc_output = tf.split(enc_output, batch_features["graph_to_num_nodes"])
+            enc_output = [
+                tf.concat([out, 
+                tf.zeros([self.hyperparameters["max_node_num"] - out.shape[0], self.hyperparameters["token_embedding_size"]])
+                ], 0) for out in enc_output]
+            enc_output = tf.stack(enc_output)
+            
+            hidden_h = self.linear_h(enc_hidden)
+
+            if self.hyperparameters["rnn_cell"] == "LSTM":
+                dec_hidden = [hidden_h, seq_enc_hidden[1]]
             else:
-                # The predicted ID is fed back into the model
+                dec_hidden = hidden_h
+
+            dec_input = tf.expand_dims([self.vocab_target.get_id_or_unk("%START%")] * enc_hidden.shape[0], 1)
+
+        if training and random.random()>0.5:
+            # Use teacher forcing
+            predictions, dec_hidden = self.decoder(target_token_seq[:,:-1], dec_hidden, enc_output)
+            return predictions
+        else:
+            # The predicted ID is fed back into the model
+            for t in range(1, self.hyperparameters["max_seq_length"]):
+                predictions, dec_hidden = self.decoder(dec_input, dec_hidden, enc_output)
+                predicted_ids = tf.argmax(predictions[:,0,:], 1)
                 dec_input = tf.expand_dims(predicted_ids, 1)
-            new_logits = tf.expand_dims(predictions[:,0,:], 1)
-            if t==1:
-                results = new_logits
-            else:
-                results = tf.concat([results, new_logits], 1)
+                new_logits = tf.expand_dims(predictions[:,0,:], 1)
+                if t==1:
+                    results = new_logits
+                else:
+                    results = tf.concat([results, new_logits], 1)
 
         return results
 
@@ -234,15 +253,7 @@ class LanguageModel(tf.keras.Model):
             that rnn_output_logits[i, t, :] are the logits for sample i after consuming
             input t; hence its target output is assumed to be target_token_seq[i, t+1].
         """
-        # 5# 4) Compute CE loss for all but the last timestep:
-        # Commented out because of the step 7
-        # token_ce_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(target_token_seq[:,1:], rnn_output_logits)
-        # token_ce_loss = tf.reduce_sum(token_ce_loss)
-
-        # 6# Compute number of (correct) predictions
-
-        # Mask that contains True for the positions of valid tokens
-        # and False for the positions of PAD 
+      
         target_token_seq = tf.cast(batch_labels["target_value"], tf.int32)
         num_graphs = tf.cast(batch_features["num_graphs_in_batch"], tf.float32)
 
@@ -312,7 +323,6 @@ class LanguageModel(tf.keras.Model):
             target_texts = self.get_text_from_tensor(batch_labels["target_value"])
             predicted_texts = self.get_text_from_tensor(tf.argmax(model_outputs,2))
             # source_text = self.get_source_from_tensor(batch_features["source_seq"])
-
 
             ref = [([x[1:x.index("%END%")] if "%END%" in x else x[1:]]) for x in target_texts]
             hyp = [(x[:x.index("%END%")] if "%END%" in x else x) for x in predicted_texts]

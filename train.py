@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Usage:
-    train.py [options] SAVE_DIR TRAIN_DATA_DIR VALID_DATA_DIR
+    train.py [options] SAVE_DIR TRAIN_DATA_DIR
 
 *_DATA_DIR are directories filled with files that we use as data.
 
@@ -35,13 +35,13 @@ import pickle
 
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="0"  # specify which GPU(s) to be used
+os.environ["CUDA_VISIBLE_DEVICES"]="1"  # specify which GPU(s) to be used
 
 def jsonl_dataset(dataset_name: str):
     dataset_params = JsonLMethod2CommentDataset.get_default_hyperparameters()
     dataset = JsonLMethod2CommentDataset(dataset_params)
     data_path = RichPath.create(
-        os.path.join(os.path.dirname(__file__), ".", "jsonl_datasets/" + dataset_name)
+        os.path.join(os.path.dirname(__file__), ".", "datasets/" + dataset_name)
     )
     dataset.load_data(data_path, folds_to_load=[DataFold.TRAIN, DataFold.VALIDATION])
 
@@ -56,11 +56,12 @@ def train(
     max_epochs: int,
     patience: int,
     save_file: str,
-    data_description
+    data_description,
+    run_name = None
 ):
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = 'logs/' + current_time + '/train'
-    valid_log_dir = 'logs/' + current_time + '/valid'
+    train_log_dir = 'logs/' + current_time + run_name +'/train'
+    valid_log_dir = 'logs/' + current_time + run_name + '/valid'
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     valid_summary_writer = tf.summary.create_file_writer(valid_log_dir)
 
@@ -154,9 +155,9 @@ def run(arguments) -> None:
     print(f"  Built source vocabulary of {len(vocab_source)} entries.")
     print(f"  Built comment vocabulary of {len(vocab_target)} entries.")
     train_data = dataset.get_tensorflow_dataset(DataFold.TRAIN)
-    print(f"  Loaded {len(list(train_data))} training samples from {args['TRAIN_DATA_DIR']}.")
+    print(f"  Loaded {len(list(train_data))} training batches from {args['TRAIN_DATA_DIR']}.")
     valid_data = dataset.get_tensorflow_dataset(DataFold.VALIDATION)
-    print(f"  Loaded {len(list(valid_data))} validation samples from {args['VALID_DATA_DIR']}.")
+    print(f"  Loaded {len(list(valid_data))} validation batches from {args['TRAIN_DATA_DIR']}.")
     model = LanguageModel(hyperparameters, vocab_source, vocab_target)
     model.build(data_description.batch_features_shapes)
     print(
@@ -172,6 +173,7 @@ def run(arguments) -> None:
         patience=patience,
         save_file=save_file,
         data_description=data_description,
+        run_name=arguments.get("--run-name")
     )
 
 

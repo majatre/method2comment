@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-data = pickle.load(open('./data/valid.pkl', 'rb'))
+data = pickle.load(open('./data/methods_code_comments_all.pkl', 'rb'))
 methods_code = data['methods_code']
 methods_comments = data['methods_comments']
 
@@ -19,8 +19,9 @@ print("The {:.2f} of methods are shorter than 200 tokens".format(
 
 plt.xlabel('No. tokens in method')
 plt.ylabel('Frequency')
-a = plt.hist(methods_length, bins=100, range=(0, 500), )
-# plt.show()
+a = plt.hist(methods_length, bins=100, range=(0, 400))
+plt.ylim(0, 8000)
+plt.show()
 
 methods_comments_length = [len(method_comment.split()) for method_comment in methods_comments]
 print("The average number of comment length is: {:.2f}".format(np.mean(methods_comments_length)))
@@ -30,4 +31,5 @@ print("The {:.2f} of comments are shorter than 50 tokens".format(
 plt.xlabel('No. words in method comment')
 plt.ylabel('Frequency')
 a = plt.hist(methods_comments_length, bins=range(0, 200))
-# plt.show()
+plt.ylim(0, 8000)
+plt.show()

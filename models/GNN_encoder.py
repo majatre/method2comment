@@ -23,8 +23,9 @@ class GraphEncoder(tf.keras.Model):
             "gnn_message_calculation_class": "gnn_edge_mlp",
             "gnn_hidden_dim": 64,
             "gnn_global_exchange_mode": "mlp",
-            "gnn_num_layers": 8,
-            "graph_encoding_size": 128,
+            "gnn_global_exchange_every_num_layers": 10,
+            "gnn_num_layers": 4,
+            "graph_encoding_size": 256,
         }
         params.update(these_hypers)
         return params
@@ -109,7 +110,7 @@ class GraphEncoder(tf.keras.Model):
 
       return per_graph_results
 
-    def call(self, inputs, training: bool):
+    def call(self, inputs, training: bool, seq_enc_output = None):
         # Pack input data from keys back into a tuple:
         adjacency_lists: Tuple[tf.Tensor, ...] = tuple(
             inputs[f"adjacency_list_{edge_type_idx}"]
@@ -118,6 +119,14 @@ class GraphEncoder(tf.keras.Model):
 
         # Start the model computations:
         initial_node_features = self.compute_initial_node_features(inputs, training)
+        if tf.is_tensor(seq_enc_output):
+            node_features = tf.split(initial_node_features, inputs["graph_to_num_nodes"])
+            n_tokens = seq_enc_output.shape[1]
+            node_features = [
+                tf.concat([source_features[1:source_len+1],  graph_features[min(source_len, n_tokens-1):, :]
+                ], 0) for graph_features, source_features, source_len in zip(node_features, seq_enc_output, inputs["source_len"])]
+            initial_node_features = tf.concat(node_features, 0)
+
         gnn_input = GNNInput(
             node_features=initial_node_features,
             adjacency_lists=adjacency_lists,
